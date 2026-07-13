@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * DT overlay to enable SATA on the Rock 5 ITX M.2 E-key slot.
+ *
+ * The M.2 E-key shares combphy0_ps between:
+ *   - pcie2x1l0  (PCIe 2.0 x1, default)
+ *   - sata0      (SATA via DWC AHCI)
+ *
+ * This overlay disables the PCIe function and enables the SoC's built-in
+ * SATA controller, switching combphy0_ps to SATA mode.  SDIO (WiFi/BT)
+ * on the same slot is unaffected.
+ *
+ * After applying this overlay, SATA drives connected via the M.2 E-key
+ * adapter will appear as /dev/sd* devices.
+ */
+
+/dts-v1/;
+/plugin/;
+
+&pcie2x1l0 {
+	status = "disabled";
+};
+
+&sata0 {
+	status = "okay";
+};

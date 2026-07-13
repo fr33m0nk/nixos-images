@@ -34,6 +34,13 @@
       name = "rockchip/rk3588-rock-5-itx.dtb";
       platform = "rockchip";
       dtsFile = ../../dts/mainline/rockchip/rk3588-rock-5-itx.dts;
+      overlays = [
+        # M.2 E-key SATA breakout: switches combphy0_ps from PCIe → SATA mode
+        {
+          name = "rock-5-itx-m2e-sata";
+          dtsFile = ../../dts/mainline/overlays/rock-5-itx-m2e-sata.dtso;
+        }
+      ];
     };
   };
 }
