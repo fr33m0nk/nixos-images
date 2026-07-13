@@ -2,9 +2,11 @@
   nixConfig = {
     extra-substituters = [
       "https://cache.qbisi.cc"
+      "https://fr33m0nk.cachix.org"
     ];
     extra-trusted-public-keys = [
       "cache.qbisi.cc-1:xEChzP5k8fj+7wajY+e9IDORRTGMhViP5NaqMShGGjQ="
+      "fr33m0nk.cachix.org-1:242Y5El6BIU2qbK/6MKJLPDdfHYRu/JVgrcVVkwERDw="
     ];
   };
 
