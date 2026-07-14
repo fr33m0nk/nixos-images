@@ -1,4 +1,7 @@
 {
+  boot.supportedFilesystems = [ "btrfs" ];
+  boot.initrd.availableKernelModules = [ "btrfs" ];
+
   disko = {
     memSize = 4096;
     enableConfig = true;
