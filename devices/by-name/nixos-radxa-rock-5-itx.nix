@@ -10,6 +10,10 @@
     ../../profiles/btrfs.nix
   ];
 
+  # Headless server — no desktop environment
+  services.xserver.enable = false;
+  services.desktopManager.plasma6.enable = false;
+
   networking.hostName = lib.mkDefault "r5itx";
 
   disko = {
