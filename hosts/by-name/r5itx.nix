@@ -11,4 +11,8 @@
     ../../profiles/desktop.nix
     ../../profiles/common.nix
   ];
+
+  # Headless server — override desktop.nix
+  services.xserver.enable = lib.mkForce false;
+  services.desktopManager.plasma6.enable = lib.mkForce false;
 }
