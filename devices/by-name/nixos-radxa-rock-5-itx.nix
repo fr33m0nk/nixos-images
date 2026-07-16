@@ -14,6 +14,8 @@
   services.xserver.enable = false;
   services.desktopManager.plasma6.enable = false;
 
+  system.stateVersion = "26.11";
+
   networking.hostName = lib.mkDefault "r5itx";
 
   disko = {
