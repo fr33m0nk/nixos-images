@@ -17,20 +17,7 @@ jobs:
             fail-fast: false
             matrix:
                 device:
-                    - x86_64-generic
-                    - x86_64-uefi
-                    - aarch64-uefi
-                    - hinlink-h88k
-                    - jwipc-e88a
-                    - radxa-rock-5t
                     - radxa-rock-5-itx
-                    - xunlong-orangepi-5-plus
-                    - friendlyelec-cm3588-nas
-                    - ido-evb3588-v1a
-                    # - friendly-nanopc-t6
-                    # - radxa-rock-5a
-                    # - radxa-rock-5b
-                    # - xunlong-orangepi-5
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
