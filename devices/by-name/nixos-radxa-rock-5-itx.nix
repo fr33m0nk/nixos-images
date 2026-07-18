@@ -34,6 +34,12 @@
       name = "rockchip/rk3588-rock-5-itx.dtb";
       platform = "rockchip";
       dtsFile = ../../dts/mainline/rockchip/rk3588-rock-5-itx.dts;
+      overlays = [
+        {
+          name = "rock-5-itx-m2e-sata";
+          dtsFile = ../../dts/mainline/overlays/rock-5-itx-m2e-sata.dtso;
+        }
+      ];
     };
   };
 }

@@ -34,6 +34,8 @@ buildLinux {
     # MPTCP
     MPTCP = yes;
     INET_MPTCP_DIAG = module;
+    # RKVENC (VEPU580) H.264/H.265 hardware encoder (dual-core RKVENC via MPP)
+    VIDEO_ROCKCHIP_RKVENC = module;
   };
 
   enableCommonConfig = false;

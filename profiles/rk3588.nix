@@ -35,6 +35,10 @@
           name = "gpu-cap-800mhz";
           dtsFile = ../dts/mainline/overlays/rk3588-gpu-cap-800mhz.dtso;
         }
+        {
+          name = "rkvenc-mpp";
+          dtsFile = ../dts/mainline/overlays/rk3588-rkvenc-mpp.dtso;
+        }
       ];
     };
     firmware = [
