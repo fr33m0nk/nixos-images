@@ -4028,6 +4028,15 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +}
 +EXPORT_SYMBOL_GPL(rkvenc_service_register_decoder);
 +
++void rkvenc_service_unregister_decoder(struct rkvenc_service *svc)
++{
++	if (!svc)
++		return;
++	svc->sub_devices[MPP_DEVICE_RKVDEC] = NULL;
++	clear_bit(MPP_DEVICE_RKVDEC, &svc->hw_support);
++}
++EXPORT_SYMBOL_GPL(rkvenc_service_unregister_decoder);
++
 +void rkvenc_service_set_global(struct rkvenc_service *svc)
 +{ global_service = svc; }
 +EXPORT_SYMBOL_GPL(rkvenc_service_set_global);
@@ -4467,5 +4476,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 +int rkvenc_service_register_decoder(struct rkvenc_service *svc,
 +				    struct platform_device *pdev,
 +				    u32 core_id);
++
++void rkvenc_service_unregister_decoder(struct rkvenc_service *svc);
 +
 +#endif /* _RKVENCSERVICE_API_H_ */
