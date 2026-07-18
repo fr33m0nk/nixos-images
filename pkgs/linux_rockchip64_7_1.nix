@@ -42,13 +42,15 @@ buildLinux {
     # is restricted (e.g. Lima NixOS VMs).  Without this, mkfs.btrfs succeeds
     # but mount -t btrfs falls back to FUSE which chokes on subvol=.
     BTRFS_FS = yes;
-    # virtio-rng — missing from Armbian defconfig, required when our
-    # kernel is used for the disko VM (NixOS shrunk-initrd needs it)
-    HW_RANDOM_VIRTIO = yes;
   };
 
   enableCommonConfig = false;
-  extraConfig = "";
+  # virtio-rng — missing from Armbian defconfig, required when our kernel
+  # is used for the disko VM.  Use extraConfig (raw text) because
+  # structuredExtraConfig can't resolve Kconfig dependencies.
+  extraConfig = ''
+    CONFIG_HW_RANDOM_VIRTIO=y
+  '';
   ignoreConfigErrors = true;
   autoModules = false;
   extraMeta.platforms = [ "aarch64-linux" ];
