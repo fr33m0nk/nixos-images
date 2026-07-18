@@ -1,33 +1,28 @@
 // SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 /*
- * DTS overlay for Rockchip RK3588 VDPU381 H.264/H.265/VP9 decoder
- * (rkvdec driver via MPP framework)
+ * DTS overlay: replace mainline vdec0 with MPP decoder binding.
  *
- * Disables the mainline hantro vpu121 binding and replaces it with
- * full MPP decoder nodes giving the driver access to the complete
- * VDPU381 hardware.
+ * The VDPU381 hardware lives at vdec0 (0xfdc38000) with the mainline
+ * stateless rkvdec driver.  This overlay disables that binding and
+ * replaces it with a stateful MPP decoder node so our rkvdec2 driver
+ * (which speaks /dev/mpp_service) can claim the hardware.
  *
- * Numeric IDs (no C preprocessor needed):
- *   Clock IDs:  ACLK_RKVDEC0=385  HCLK_RKVDEC0=384  ACLK_VDPU_ROOT=429
- *               HCLK_VDPU_ROOT=431  CLK_RKVDEC0_CORE=388  ACLK_RKVDEC_CCU=383
- *   Reset IDs:  SRST_A_RKVDEC0=323  SRST_H_RKVDEC0=322
- *   Power:      RK3588_PD_RKVDEC0=14
- *   GIC_SPI=0   IRQ_TYPE_LEVEL_HIGH=4
- *
- * Based on rcawston's rkvenc encoder overlay pattern.
+ * Numeric IDs:
+ *   Clocks:  ACLK_RKVDEC0=385  HCLK_RKVDEC0=384  CLK_RKVDEC0_CA=386
+ *            CLK_RKVDEC0_CORE=388  CLK_RKVDEC0_HEVC_CA=387
+ *   Resets:  SRST_A_RKVDEC0=323  SRST_H_RKVDEC0=322
+ *            SRST_RKVDEC0_CA=326  SRST_RKVDEC0_CORE=328
+ *            SRST_RKVDEC0_HEVC_CA=327
+ *   Power:   RK3588_PD_RKVDEC0=14
+ *   IRQ:     GIC_SPI 95 (core), 96 (mmu)
  */
 
 /dts-v1/;
 /plugin/;
 
-/* Disable mainline hantro vpu121 to free the MMIO region */
-&vpu121 {
-	status = "disabled";
-};
-
-&vpu121_mmu {
-	status = "disabled";
-};
+/* Disable mainline stateless rkvdec driver */
+&vdec0   { status = "disabled"; };
+&vdec0_mmu { status = "disabled"; };
 
 &{/} {
 	#address-cells = <2>;
@@ -43,35 +38,35 @@
 		};
 	};
 
-	/* Aliases for core ID assignment (of_alias_get_id) */
-	aliases {
-		rkvdec0 = &rkvdec0;
-	};
+	aliases { rkvdec0 = &rkvdec0; };
 
-	/* CCU — multi-format coordination unit */
 	rkvdec_ccu: rkvdec-ccu {
 		compatible = "rockchip,rkv-decoder-v2-ccu";
 	};
 
-	/* Decoder core — VDPU381 @ 0xfdb50000 */
-	rkvdec0: rkvdec-core@fdb50000 {
+	/* Decoder core — VDPU381 @ 0xfdc38000 */
+	rkvdec0: rkvdec-core@fdc38000 {
 		compatible = "rockchip,rkv-decoder-v2-core";
-		reg = <0x0 0xfdb50000 0x0 0x800>;
-		interrupts = <0x0 119 0x4 0x0>;
+		reg = <0x0 0xfdc38100 0x0 0x500>,
+		      <0x0 0xfdc38000 0x0 0x100>,
+		      <0x0 0xfdc38600 0x0 0x100>;
+		reg-names = "function", "link", "cache";
+		interrupts = <0x0 95 0x4 0x0>;
 		interrupt-names = "vdpu";
-		rockchip,core-id = <0>;
 		memory-region = <&rkvdec0_rcb_iova>;
-		clocks = <&cru 385>, <&cru 384>, <&cru 429>,
-			 <&cru 431>, <&cru 388>, <&cru 383>;
-		clock-names = "aclk_vcodec", "hclk_vcodec", "aclk_vdpu_root",
-			      "hclk_vdpu_root", "clk_core", "aclk_ccu";
-		rockchip,normal-rates = <400000000>, <200000000>, <400000000>,
-					<200000000>, <400000000>, <400000000>;
-		assigned-clocks = <&cru 385>, <&cru 388>;
-		assigned-clock-rates = <400000000>, <400000000>;
-		resets = <&cru 323>, <&cru 322>;
-		reset-names = "video_a", "video_h";
-		rockchip,sram = <&system_sram2>;
+		clocks = <&cru 385>, <&cru 384>, <&cru 386>,
+			 <&cru 388>, <&cru 387>;
+		clock-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
+		rockchip,normal-rates = <800000000>, <200000000>, <600000000>,
+					<600000000>, <1000000000>;
+		assigned-clocks = <&cru 385>, <&cru 388>,
+				  <&cru 386>, <&cru 387>;
+		assigned-clock-rates = <800000000>, <600000000>,
+				       <600000000>, <1000000000>;
+		resets = <&cru 323>, <&cru 322>, <&cru 326>,
+			 <&cru 328>, <&cru 327>;
+		reset-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
+		rockchip,sram = <&vdec0_sram>;
 		rockchip,rcb-iova = <0xffb00000 0x100000>;
 		iommus = <&rkvdec0_mmu>;
 		rockchip,srv = <&mpp_srv>;
@@ -82,11 +77,11 @@
 		power-domains = <&power 14>;
 	};
 
-	/* IOMMU for decoder core — same reg as vpu121_mmu */
-	rkvdec0_mmu: iommu@fdb50800 {
+	/* IOMMU at same address as vdec0_mmu */
+	rkvdec0_mmu: iommu@fdc38700 {
 		compatible = "rockchip,rk3588-iommu", "rockchip,rk3568-iommu";
-		reg = <0x0 0xfdb50800 0x0 0x40>;
-		interrupts = <0x0 118 0x4 0x0>;
+		reg = <0x0 0xfdc38700 0x0 0x40>, <0x0 0xfdc38740 0x0 0x40>;
+		interrupts = <0x0 96 0x4 0x0>;
 		clocks = <&cru 385>, <&cru 384>;
 		clock-names = "aclk", "iface";
 		rockchip,disable-mmu-reset;
