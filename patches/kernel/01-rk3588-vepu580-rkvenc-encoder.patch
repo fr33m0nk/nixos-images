@@ -2803,7 +2803,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1289 @@
+@@ -0,0 +1,1290 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -2829,6 +2829,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +#include <linux/wait.h>
 +
 +#include "rkvenc_hw.h"
++#include "rkvenc_service.h"
 +
 +/* ---- MSG v1 structure (from userspace) ---- */
 +struct mpp_msg_v1 {
