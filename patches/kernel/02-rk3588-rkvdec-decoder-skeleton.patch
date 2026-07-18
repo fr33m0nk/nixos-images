@@ -15,7 +15,7 @@ diff -ruN a/drivers/media/platform/rockchip/Makefile b/drivers/media/platform/ro
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Kconfig b/drivers/media/platform/rockchip/rkvdec2/Kconfig
 --- a/drivers/media/platform/rockchip/rkvdec2/Kconfig	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/Kconfig	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,13 @@
+@@ -0,0 +1,9 @@
 +config VIDEO_ROCKCHIP_RKVDEC2
 +	tristate "Rockchip VDPU381 MPP decoder (rkvdec2)"
 +	depends on (ARCH_ROCKCHIP || COMPILE_TEST) && VIDEO_ROCKCHIP_RKVENC
@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,230 @@
+@@ -0,0 +1,229 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -268,7 +268,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,95 @@
+@@ -0,0 +1,42 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * VDPU381 decode HAL interface.
@@ -314,7 +314,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,77 @@
+@@ -0,0 +1,74 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL — register-level programming (STUB).
@@ -420,7 +420,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.h b/drivers/
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,55 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * MPP service wrapper.
@@ -479,7 +479,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c b/drivers/
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,18 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/* IOMMU DMA allocator for VDPU381.  Copyright (C) 2026 fr33m0nk */
 +#ifndef _RKVDEC2_IOMMU_H_
@@ -501,7 +501,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h b/drivers/me
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,56 @@
+@@ -0,0 +1,48 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * IOMMU DMA allocator for VDPU381 — mirrors rkvenc_iommu.c.
@@ -553,7 +553,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c b/drivers/me
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,20 @@
+@@ -0,0 +1,19 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/* Task / job queue manager.  Copyright (C) 2026 fr33m0nk */
 +#ifndef _RKVDEC2_TASK_H_
@@ -576,7 +576,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/med
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,112 @@
+@@ -0,0 +1,109 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Task / job queue manager for VDPU381 decode.
