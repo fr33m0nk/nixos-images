@@ -39,6 +39,10 @@
           name = "rkvenc-mpp";
           dtsFile = ../dts/mainline/overlays/rk3588-rkvenc-mpp.dtso;
         }
+        {
+          name = "rkvdec-mpp";
+          dtsFile = ../dts/mainline/overlays/rk3588-rkvdec-mpp.dtso;
+        }
       ];
     };
     firmware = [

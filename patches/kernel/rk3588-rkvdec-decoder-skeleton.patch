@@ -1,0 +1,662 @@
+diff -ruN a/drivers/media/platform/rockchip/Kconfig b/drivers/media/platform/rockchip/Kconfig
+--- a/drivers/media/platform/rockchip/Kconfig
++++ b/drivers/media/platform/rockchip/Kconfig
+@@ -8,3 +8,4 @@ source "drivers/media/platform/rockchip/rkisp1/Kconfig"
+ source "drivers/media/platform/rockchip/rkvdec/Kconfig"
+ source "drivers/media/platform/rockchip/rkvenc/Kconfig"
++source "drivers/media/platform/rockchip/rkvdec2/Kconfig"
+diff -ruN a/drivers/media/platform/rockchip/Makefile b/drivers/media/platform/rockchip/Makefile
+--- a/drivers/media/platform/rockchip/Makefile
++++ b/drivers/media/platform/rockchip/Makefile
+@@ -9,3 +9,4 @@ obj-$(CONFIG_VIDEO_ROCKCHIP_RKISP1) += rkisp1/
+ obj-$(CONFIG_VIDEO_ROCKCHIP_RKVDEC) += rkvdec/
+ obj-$(CONFIG_VIDEO_ROCKCHIP_RKVENC) += rkvenc/
++obj-$(CONFIG_VIDEO_ROCKCHIP_RKVDEC2) += rkvdec2/
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Kconfig b/drivers/media/platform/rockchip/rkvdec2/Kconfig
+--- a/drivers/media/platform/rockchip/rkvdec2/Kconfig	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/Kconfig	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,13 @@
++config VIDEO_ROCKCHIP_RKVDEC2
++	tristate "Rockchip VDPU381 MPP decoder driver"
++	depends on ARCH_ROCKCHIP || COMPILE_TEST
++	depends on VIDEO_DEV && IOMMU_API
++	select VIDEOBUF2_DMA_CONTIG
++	help
++	  MPP decoder for VDPU381 on RK3588 — H.264, HEVC, VP9.
++	  Shares /dev/mpp_service with the rkvenc encoder driver.
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/platform/rockchip/rkvdec2/Makefile
+--- a/drivers/media/platform/rockchip/rkvdec2/Makefile	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/Makefile	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,4 @@
++# SPDX-License-Identifier: GPL-2.0
++obj-$(CONFIG_VIDEO_ROCKCHIP_RKVDEC2) += rkvdec2.o
++rkvdec2-objs := rkvdec2_drv.o rkvdec2_service.o rkvdec2_iommu.o rkvdec2_task.o
++rkvdec2-objs += rkvdec2_hw.o
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,213 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * VDPU381 MPP decoder — platform device probe/remove.
++ * Based on rcawston's rkvenc encoder, adapted for decode direction.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#include <linux/clk.h>
++#include <linux/interrupt.h>
++#include <linux/module.h>
++#include <linux/of.h>
++#include <linux/platform_device.h>
++#include <linux/pm_runtime.h>
++#include <linux/reset.h>
++#include "rkvdec2_hw.h"
++#include "rkvdec2_service.h"
++#include "rkvdec2_task.h"
++
++struct rkvdec2_dev {
++	struct device *dev;
++	void __iomem *regs;
++	struct clk *aclk_vcodec, *hclk_vcodec;
++	struct clk *aclk_vdpu_root, *hclk_vdpu_root;
++	struct clk *clk_core, *aclk_ccu;
++	struct reset_control *rst_a, *rst_h;
++	struct rkvdec2_service *service;
++	struct rkvdec2_task_mgr *task_mgr;
++	int irq;
++	u32 core_id;
++};
++
++static irqreturn_t rkvdec2_irq(int irq, void *data)
++{
++	rkvdec2_hw_irq_handler(((struct rkvdec2_dev *)data)->regs);
++	return IRQ_WAKE_THREAD;
++}
++static irqreturn_t rkvdec2_irq_thread(int irq, void *data)
++{
++	rkvdec2_task_irq_thread(((struct rkvdec2_dev *)data)->task_mgr);
++	return IRQ_HANDLED;
++}
++
++static int rkvdec2_clk_enable(struct rkvdec2_dev *rdev)
++{
++	int ret;
++#define EN(c) do { ret = clk_prepare_enable(rdev->c); if (ret) return ret; } while(0)
++	EN(aclk_vcodec); EN(hclk_vcodec);
++	EN(aclk_vdpu_root); EN(hclk_vdpu_root);
++	EN(clk_core); EN(aclk_ccu);
++#undef EN
++	return 0;
++}
++static void rkvdec2_clk_disable(struct rkvdec2_dev *rdev)
++{
++	clk_disable_unprepare(rdev->aclk_ccu);
++	clk_disable_unprepare(rdev->clk_core);
++	clk_disable_unprepare(rdev->hclk_vdpu_root);
++	clk_disable_unprepare(rdev->aclk_vdpu_root);
++	clk_disable_unprepare(rdev->hclk_vcodec);
++	clk_disable_unprepare(rdev->aclk_vcodec);
++}
++
++static int rkvdec2_probe(struct platform_device *pdev)
++{
++	struct device *dev = &pdev->dev;
++	struct rkvdec2_dev *rdev;
++	struct resource *res;
++	int ret;
++
++	rdev = devm_kzalloc(dev, sizeof(*rdev), GFP_KERNEL);
++	if (!rdev) return -ENOMEM;
++	rdev->dev = dev;
++	platform_set_drvdata(pdev, rdev);
++	of_property_read_u32(dev->of_node, "rockchip,core-id", &rdev->core_id);
++
++	res = platform_get_resource(pdev, IORESOURCE_MEM, 0);
++	rdev->regs = devm_ioremap_resource(dev, res);
++	if (IS_ERR(rdev->regs)) return PTR_ERR(rdev->regs);
++
++	rdev->aclk_vcodec = devm_clk_get(dev, "aclk_vcodec");
++	rdev->hclk_vcodec = devm_clk_get(dev, "hclk_vcodec");
++	rdev->aclk_vdpu_root = devm_clk_get(dev, "aclk_vdpu_root");
++	rdev->hclk_vdpu_root = devm_clk_get(dev, "hclk_vdpu_root");
++	rdev->clk_core = devm_clk_get(dev, "clk_core");
++	rdev->aclk_ccu = devm_clk_get(dev, "aclk_ccu");
++	rdev->rst_a = devm_reset_control_get(dev, "video_a");
++	rdev->rst_h = devm_reset_control_get(dev, "video_h");
++
++	rdev->irq = platform_get_irq(pdev, 0);
++	if (rdev->irq < 0) return rdev->irq;
++
++	ret = rkvdec2_clk_enable(rdev);
++	if (ret) return ret;
++	reset_control_deassert(rdev->rst_a);
++	reset_control_deassert(rdev->rst_h);
++	rkvdec2_hw_init(rdev->regs);
++
++	rdev->service = rkvdec2_service_create(dev, rdev->core_id, rdev->regs);
++	if (IS_ERR(rdev->service)) { ret = PTR_ERR(rdev->service); goto err_svc; }
++
++	rdev->task_mgr = rkvdec2_task_create(dev, rdev->service, rdev->regs, rdev->core_id);
++	if (IS_ERR(rdev->task_mgr)) { ret = PTR_ERR(rdev->task_mgr); goto err_task; }
++
++	ret = devm_request_threaded_irq(dev, rdev->irq,
++		rkvdec2_irq, rkvdec2_irq_thread,
++		IRQF_SHARED, dev_name(dev), rdev);
++	if (ret) { dev_err(dev, "irq %d: %d\n", rdev->irq, ret); goto err_irq; }
++
++	pm_runtime_enable(dev);
++	dev_info(dev, "VDPU381 core %u ready\n", rdev->core_id);
++	return 0;
++
++err_irq:  rkvdec2_task_destroy(rdev->task_mgr);
++err_task: rkvdec2_service_destroy(rdev->service);
++err_svc:
++	reset_control_assert(rdev->rst_a);
++	reset_control_assert(rdev->rst_h);
++	rkvdec2_clk_disable(rdev);
++	return ret;
++}
++
++static void rkvdec2_remove(struct platform_device *pdev)
++{
++	struct rkvdec2_dev *rdev = platform_get_drvdata(pdev);
++	pm_runtime_disable(&pdev->dev);
++	rkvdec2_task_destroy(rdev->task_mgr);
++	rkvdec2_service_destroy(rdev->service);
++	reset_control_assert(rdev->rst_a);
++	reset_control_assert(rdev->rst_h);
++	rkvdec2_clk_disable(rdev);
++}
++
++static const struct of_device_id rkvdec2_match[] = {
++	{ .compatible = "rockchip,rkv-decoder-v2-core" },
++	{ /* sentinel */ }
++};
++MODULE_DEVICE_TABLE(of, rkvdec2_match);
++
++static struct platform_driver rkvdec2_driver = {
++	.probe  = rkvdec2_probe,
++	.remove = rkvdec2_remove,
++	.driver = { .name = "rkvdec2", .of_match_table = of_match_ptr(rkvdec2_match) },
++};
++module_platform_driver(rkvdec2_driver);
++MODULE_DESCRIPTION("Rockchip VDPU381 MPP decoder"); MODULE_LICENSE("GPL");
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,91 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * VDPU381 decode HAL interface.
++ * Register programming is ported incrementally from vendor mpp_rkvdec2.c.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#ifndef _RKVDEC2_HW_H_
++#define _RKVDEC2_HW_H_
++#include <linux/types.h>
++
++enum rkvdec2_codec { RKVDEC2_CODEC_H264=0, RKVDEC2_CODEC_HEVC, RKVDEC2_CODEC_VP9, RKVDEC2_CODEC_MAX };
++
++struct rkvdec2_frame_desc {
++	u32 width, height, codec, profile, level;
++	dma_addr_t bs_dma;        u32 bs_size;
++	dma_addr_t ref_dma[16];   u32 ref_count;
++	dma_addr_t dst_dma;       u32 dst_stride;
++	dma_addr_t dpb_dma[16];   u32 dpb_count;
++	union {
++		struct { u32 sps_flags, pps_flags, slice_flags, scaling_matrix;
++			 u32 ref_l0, ref_l1; } h264;
++		struct { u32 sps_flags, pps_flags, slice_flags, scaling_list;
++			 u32 ref_l0; } hevc;
++		struct { u32 frame_type, profile, bit_depth, ref_count; } vp9;
++	} codec_params;
++};
++
++int  rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_frame_desc *desc);
++void rkvdec2_hw_irq_handler(void __iomem *regs);
++void rkvdec2_hw_power_on(void __iomem *regs);
++void rkvdec2_hw_power_off(void __iomem *regs);
++int  rkvdec2_hw_init(void __iomem *regs);
++const char *rkvdec2_codec_name(enum rkvdec2_codec codec);
++
++#define RKVDEC2_MAX_WIDTH  7680
++#define RKVDEC2_MAX_HEIGHT 4320
++#endif
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,84 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * VDPU381 decode HAL — register-level programming (STUB).
++ * Phase 1: probe init, power mgmt, IRQ handling.
++ * Phase 2: H.264 registers (port from mpp_rkvdec2.c).
++ * Phase 3: HEVC + VP9 registers.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#include <linux/io.h>
++#include <linux/delay.h>
++#include "rkvdec2_hw.h"
++
++/* Register offsets — preliminary (verify against TRM / vendor driver) */
++#define VDPU_IRQ_STATUS    0x0004
++#define VDPU_IRQ_CLEAR     0x0008
++#define VDPU_IRQ_MASK      0x000C
++#define VDPU_POWER_CTRL    0x0010
++#define VDPU_SOFT_RESET     0x0014
++
++#define VDPU_IRQ_DEC_DONE   BIT(0)
++#define VDPU_IRQ_DEC_ERROR  BIT(1)
++#define VDPU_IRQ_BUS_ERROR  BIT(2)
++#define VDPU_IRQ_TIMEOUT    BIT(3)
++
++#define R(reg)    readl(regs + (reg))
++#define W(reg,v)  writel(v, regs + (reg))
++
++int rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_frame_desc *desc)
++{
++	/* STUB: immediately signal completion so the task manager
++	 * doesn't hang.  Real register programming:
++	 *   1. codec config (SPS/PPS, scaling lists)
++	 *   2. DPB / reference frame addresses
++	 *   3. bitstream buffer addr + length
++	 *   4. output buffer addr + stride
++	 *   5. RUN command → hardware starts
++	 */
++	W(VDPU_IRQ_CLEAR, VDPU_IRQ_DEC_DONE);
++	W(VDPU_IRQ_STATUS, VDPU_IRQ_DEC_DONE);
++	return 0;
++}
++
++void rkvdec2_hw_irq_handler(void __iomem *regs)
++{
++	u32 st = R(VDPU_IRQ_STATUS);
++	if (st & VDPU_IRQ_DEC_DONE)  W(VDPU_IRQ_CLEAR, VDPU_IRQ_DEC_DONE);
++	if (st & VDPU_IRQ_DEC_ERROR) W(VDPU_IRQ_CLEAR, VDPU_IRQ_DEC_ERROR);
++	if (st & VDPU_IRQ_BUS_ERROR) W(VDPU_IRQ_CLEAR, VDPU_IRQ_BUS_ERROR);
++	if (st & VDPU_IRQ_TIMEOUT)   W(VDPU_IRQ_CLEAR, VDPU_IRQ_TIMEOUT);
++}
++
++void rkvdec2_hw_power_on(void __iomem *regs)  { W(VDPU_SOFT_RESET, 0); udelay(10); W(VDPU_POWER_CTRL, 1); }
++void rkvdec2_hw_power_off(void __iomem *regs) { W(VDPU_POWER_CTRL, 0); }
++
++int rkvdec2_hw_init(void __iomem *regs)
++{
++	u32 ver;
++	W(VDPU_SOFT_RESET, 1); udelay(10);
++	W(VDPU_SOFT_RESET, 0); udelay(10);
++	W(VDPU_IRQ_CLEAR, 0xffffffff);
++	ver = R(0x0000) & 0xffff;
++	pr_info("rkvdec2: VDPU381 core version %04x\n", ver);
++	return 0;
++}
++
++const char *rkvdec2_codec_name(enum rkvdec2_codec c) {
++	static const char *n[] = {"H.264","HEVC","VP9"};
++	return (c<RKVDEC2_CODEC_MAX)?n[c]:"?";
++}
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.h
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.h	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.h	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,36 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * MPP service wrapper — shared framework that rkvenc and rkvdec2
++ * both use to register with /dev/mpp_service.
++ * Adapted from rcawston's rkvenc_service.h.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#ifndef _RKVDEC2_SERVICE_H_
++#define _RKVDEC2_SERVICE_H_
++#include <linux/device.h>
++#include <linux/types.h>
++
++struct rkvdec2_service;
++
++struct rkvdec2_service_ops {
++	/* Called when MPP userspace submits a decode task */
++	int (*submit)(struct rkvdec2_service *svc, void *task_data, u32 size);
++	/* Signal completion back to userspace */
++	void (*complete)(struct rkvdec2_service *svc, s32 result);
++};
++
++struct rkvdec2_service *rkvdec2_service_create(struct device *dev,
++	u32 core_id, void __iomem *regs,
++	const struct rkvdec2_service_ops *ops);
++void rkvdec2_service_destroy(struct rkvdec2_service *svc);
++
++/* Called by task_mgr when hardware finishes — pushes result to
++ * the MPP service which wakes userspace. */
++void rkvdec2_service_signal(struct rkvdec2_service *svc, s32 result);
++
++/* Returns the regs base for the hardware (used by task_mgr) */
++void __iomem *rkvdec2_service_regs(struct rkvdec2_service *svc);
++u32 rkvdec2_service_core_id(struct rkvdec2_service *svc);
++
++#endif
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,78 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * MPP service wrapper — thin shim around the global mpp_srv
++ * singleton created by the rkvenc encoder driver.  rkvdec2
++ * and rkvenc share the same /dev/mpp_service character device.
++ *
++ * Adapted from rcawston's rkvenc_service.c.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#include <linux/slab.h>
++#include <linux/io.h>
++#include <linux/err.h>
++#include "rkvdec2_service.h"
++
++struct rkvdec2_service {
++	struct device *dev;
++	u32 core_id;
++	void __iomem *regs;
++	const struct rkvdec2_service_ops *ops;
++
++	/* MPP service handle — references the singleton shared
++	 * with rkvenc.  NULL if rkvenc hasn't probed yet
++	 * (rkvdec2 will retry registration when it does). */
++	struct mpp_service *mpp;
++	bool registered;
++};
++
++struct rkvdec2_service *rkvdec2_service_create(struct device *dev,
++	u32 core_id, void __iomem *regs,
++	const struct rkvdec2_service_ops *ops)
++{
++	struct rkvdec2_service *svc;
++
++	svc = kzalloc(sizeof(*svc), GFP_KERNEL);
++	if (!svc) return ERR_PTR(-ENOMEM);
++	svc->dev = dev;
++	svc->core_id = core_id;
++	svc->regs = regs;
++	svc->ops = ops;
++
++	/* mpp_srv singleton is created by rkvenc probe.  If rkvenc
++	 * hasn't loaded yet, we stay in deferred state — the task
++	 * manager will retry register on first task submission. */
++	svc->mpp = NULL;
++	svc->registered = false;
++
++	dev_info(dev, "rkvdec2 service core-%u created (mpp deferred)\n", core_id);
++	return svc;
++}
++
++void rkvdec2_service_destroy(struct rkvdec2_service *svc)
++{
++	if (svc->registered && svc->mpp)
++		/* mpp_service_unregister_core(svc->mpp, svc->core_id); */;
++	kfree(svc);
++}
++
++void rkvdec2_service_signal(struct rkvdec2_service *svc, s32 result)
++{
++	if (svc->ops && svc->ops->complete)
++		svc->ops->complete(svc, result);
++}
++
++void __iomem *rkvdec2_service_regs(struct rkvdec2_service *svc)
++{
++	return svc->regs;
++}
++
++u32 rkvdec2_service_core_id(struct rkvdec2_service *svc)
++{
++	return svc->core_id;
++}
++
++void rkvdec2_service_set_mpp(struct rkvdec2_service *svc, struct mpp_service *mpp)
++{
++	svc->mpp = mpp;
++}
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.h	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,27 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * IOMMU management for VDPU381 — shared pattern with rkvenc.
++ * Allocates/ maps DMA buffers for bitstream, DPB, output frames.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#ifndef _RKVDEC2_IOMMU_H_
++#define _RKVDEC2_IOMMU_H_
++#include <linux/types.h>
++#include <linux/dma-direction.h>
++#include <linux/device.h>
++
++struct rkvdec2_iommu;
++
++struct rkvdec2_iommu *rkvdec2_iommu_create(struct device *dev);
++void rkvdec2_iommu_destroy(struct rkvdec2_iommu *io);
++
++/* Allocate a physically contiguous DMA buffer and map it for the
++ * decoder hardware (DEVICE direction for bitstream, FROM_DEVICE
++ * for output).  Returns a kernel virtual address, DMA address
++ * written to *dma. */
++void *rkvdec2_iommu_alloc(struct rkvdec2_iommu *io, size_t size,
++			  dma_addr_t *dma, enum dma_data_direction dir);
++void rkvdec2_iommu_free(struct rkvdec2_iommu *io, size_t size,
++			void *cpu, dma_addr_t dma);
++
++#endif
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,67 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * IOMMU DMA allocator for VDPU381 — mirrors rkvenc_iommu.c.
++ * Adapted from rcawston's encoder pattern.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#include <linux/slab.h>
++#include <linux/dma-mapping.h>
++#include <linux/err.h>
++#include "rkvdec2_iommu.h"
++
++struct rkvdec2_iommu {
++	struct device *dev;
++	/* RCB (rate control buffer) reserved region — carve-out
++	 * for the decoder's internal working memory. */
++	phys_addr_t rcb_base;
++	size_t rcb_size;
++};
++
++struct rkvdec2_iommu *rkvdec2_iommu_create(struct device *dev)
++{
++	struct rkvdec2_iommu *io = kzalloc(sizeof(*io), GFP_KERNEL);
++	if (!io) return ERR_PTR(-ENOMEM);
++	io->dev = dev;
++
++	if (dma_set_mask_and_coherent(dev, DMA_BIT_MASK(40)))
++		dev_warn(dev, "VDPU381: 40-bit DMA mask failed\n");
++
++	return io;
++}
++
++void rkvdec2_iommu_destroy(struct rkvdec2_iommu *io) { kfree(io); }
++
++void *rkvdec2_iommu_alloc(struct rkvdec2_iommu *io, size_t size,
++			  dma_addr_t *dma, enum dma_data_direction dir)
++{
++	void *cpu;
++	dma_addr_t d;
++
++	if (!io || !io->dev)
++		return ERR_PTR(-EINVAL);
++
++	/* DMA-coherent allocation — the IOMMU handles the
++	 * physical-contiguity constraint transparently. */
++	cpu = dma_alloc_coherent(io->dev, size, &d, GFP_KERNEL);
++	if (!cpu)
++		return ERR_PTR(-ENOMEM);
++
++	if (dma)
++		*dma = d;
++
++	/* Touch the first page to fault it in (avoids IOMMU
++	 * page-fault latency on the first real access). */
++	*(volatile char *)cpu = 0;
++
++	return cpu;
++}
++
++void rkvdec2_iommu_free(struct rkvdec2_iommu *io, size_t size,
++			void *cpu, dma_addr_t dma)
++{
++	if (!io || !io->dev || !cpu)
++		return;
++	dma_free_coherent(io->dev, size, cpu, dma);
++}
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * Task / request queue manager — pulls decode jobs from the MPP
++ * service queue, submits them to the HAL, and signals completion.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#ifndef _RKVDEC2_TASK_H_
++#define _RKVDEC2_TASK_H_
++#include <linux/device.h>
++#include <linux/types.h>
++
++struct rkvdec2_service;
++struct rkvdec2_task_mgr;
++
++struct rkvdec2_task_mgr *rkvdec2_task_create(struct device *dev,
++	struct rkvdec2_service *svc, void __iomem *regs, u32 core_id);
++void rkvdec2_task_destroy(struct rkvdec2_task_mgr *tm);
++
++/* Threaded IRQ bottom-half — dequeues completed tasks,
++ * signals the service, and starts the next pending job. */
++void rkvdec2_task_irq_thread(struct rkvdec2_task_mgr *tm);
++
++#endif
+diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
+--- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,117 @@
++// SPDX-License-Identifier: GPL-2.0-only
++/*
++ * Task manager — dequeues from MPP service, runs on hardware, signals back.
++ * Adapted from rcawston's rkvenc_task.c for decode direction.
++ * Copyright (C) 2026 fr33m0nk
++ */
++#include <linux/slab.h>
++#include <linux/spinlock.h>
++#include <linux/list.h>
++#include <linux/workqueue.h>
++#include "rkvdec2_task.h"
++#include "rkvdec2_service.h"
++#include "rkvdec2_hw.h"
++
++/* Max in-flight decode jobs per core. VDPU381 can handle 4
++ * simultaneous frames (multi-slot decode pipeline). */
++#define MAX_INFLIGHT 4
++
++struct rkvdec2_task {
++	struct list_head node;
++	struct rkvdec2_frame_desc desc;
++	void *mpp_task;  /* opaque MPP userspace task handle */
++	u32 task_id;
++	int status;      /* 0 = pending, 1 = running, <0 = error */
++};
++
++struct rkvdec2_task_mgr {
++	struct device *dev;
++	struct rkvdec2_service *svc;
++	void __iomem *regs;
++	u32 core_id;
++
++	spinlock_t lock;
++	struct list_head pending;   /* tasks waiting for hardware */
++	struct list_head running;   /* tasks currently on hardware */
++
++	struct work_struct work;
++	u32 task_counter;
++};
++
++static void rkvdec2_task_worker(struct work_struct *work)
++{
++	struct rkvdec2_task_mgr *tm = container_of(work, struct rkvdec2_task_mgr, work);
++	struct rkvdec2_task *task, *tmp;
++	unsigned long flags;
++	int ret, running_count = 0;
++
++	spin_lock_irqsave(&tm->lock, flags);
++
++	/* Count already-running jobs */
++	list_for_each_entry_safe(task, tmp, &tm->running, node)
++		running_count++;
++
++	/* Start new jobs if there are free hardware slots */
++	while (running_count < MAX_INFLIGHT && !list_empty(&tm->pending)) {
++		task = list_first_entry(&tm->pending, struct rkvdec2_task, node);
++		list_move_tail(&task->node, &tm->running);
++		task->status = 1; /* running */
++		running_count++;
++
++		spin_unlock_irqrestore(&tm->lock, flags);
++
++		/* Submit to hardware — STUB: rkvdec2_hw_run()
++		 * immediately signals "done" via the IRQ status
++		 * register, so the next irq_thread will pick it up. */
++		ret = rkvdec2_hw_run(tm->regs, &task->desc);
++		if (ret) {
++			task->status = ret;
++			dev_err(tm->dev, "decode task %u failed: %d\n",
++				task->task_id, ret);
++		}
++
++		spin_lock_irqsave(&tm->lock, flags);
++	}
++	spin_unlock_irqrestore(&tm->lock, flags);
++}
++
++void rkvdec2_task_irq_thread(struct rkvdec2_task_mgr *tm)
++{
++	struct rkvdec2_task *task, *tmp;
++	unsigned long flags;
++
++	spin_lock_irqsave(&tm->lock, flags);
++	list_for_each_entry_safe(task, tmp, &tm->running, node) {
++		int result = task->status;
++		if (result == 1) continue; /* still running? */
++
++		list_del(&task->node);
++		spin_unlock_irqrestore(&tm->lock, flags);
++
++		rkvdec2_service_signal(tm->svc, result >= 0 ? 0 : result);
++		kfree(task);
++
++		spin_lock_irqsave(&tm->lock, flags);
++	}
++	spin_unlock_irqrestore(&tm->lock, flags);
++
++	/* Kick the worker to start pending tasks */
++	schedule_work(&tm->work);
++}
++
++struct rkvdec2_task_mgr *rkvdec2_task_create(struct device *dev,
++	struct rkvdec2_service *svc, void __iomem *regs, u32 core_id)
++{
++	struct rkvdec2_task_mgr *tm = kzalloc(sizeof(*tm), GFP_KERNEL);
++	if (!tm) return ERR_PTR(-ENOMEM);
++	tm->dev = dev; tm->svc = svc; tm->regs = regs; tm->core_id = core_id;
++	spin_lock_init(&tm->lock);
++	INIT_LIST_HEAD(&tm->pending);
++	INIT_LIST_HEAD(&tm->running);
++	INIT_WORK(&tm->work, rkvdec2_task_worker);
++	return tm;
++}
++
++void rkvdec2_task_destroy(struct rkvdec2_task_mgr *tm) { cancel_work_sync(&tm->work); kfree(tm); }
