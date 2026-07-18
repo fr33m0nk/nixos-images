@@ -45,12 +45,7 @@ buildLinux {
   };
 
   enableCommonConfig = false;
-  # virtio-rng — missing from Armbian defconfig, required when our kernel
-  # is used for the disko VM.  Use extraConfig (raw text) because
-  # structuredExtraConfig can't resolve Kconfig dependencies.
-  extraConfig = ''
-    CONFIG_HW_RANDOM_VIRTIO=y
-  '';
+  extraConfig = "";
   ignoreConfigErrors = true;
   autoModules = false;
   extraMeta.platforms = [ "aarch64-linux" ];
