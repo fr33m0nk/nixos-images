@@ -19,7 +19,9 @@
   disko = {
     imageBuilder = {
       enableBinfmt = config.disko.imageBuilder.pkgs != pkgs;
-      kernelPackages = config.disko.imageBuilder.pkgs.linuxPackages;
+      # Use the target kernel so BTRFS (built-in via CONFIG_BTRFS_FS=y)
+      # is always available, even on hosts where insmod is blocked.
+      kernelPackages = pkgs.linuxPackagesFor pkgs.linux_rockchip64_7_1;
     };
   };
 
