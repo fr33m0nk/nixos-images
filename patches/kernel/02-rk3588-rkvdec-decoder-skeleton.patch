@@ -1,15 +1,14 @@
 diff -ruN a/drivers/media/platform/rockchip/Kconfig b/drivers/media/platform/rockchip/Kconfig
 --- a/drivers/media/platform/rockchip/Kconfig
 +++ b/drivers/media/platform/rockchip/Kconfig
-@@ -8,3 +8,4 @@ source "drivers/media/platform/rockchip/rkisp1/Kconfig"
+@@ -8,2 +8,3 @@ source "drivers/media/platform/rockchip/rkisp1/Kconfig"
  source "drivers/media/platform/rockchip/rkvdec/Kconfig"
  source "drivers/media/platform/rockchip/rkvenc/Kconfig"
 +source "drivers/media/platform/rockchip/rkvdec2/Kconfig"
 diff -ruN a/drivers/media/platform/rockchip/Makefile b/drivers/media/platform/rockchip/Makefile
 --- a/drivers/media/platform/rockchip/Makefile
 +++ b/drivers/media/platform/rockchip/Makefile
-@@ -9,3 +9,4 @@ obj-y += rkcif/
- obj-y += rkisp1/
+@@ -9,2 +9,3 @@ obj-y += rkisp1/
  obj-y += rkvdec/
  obj-y += rkvenc/
 +obj-y += rkvdec2/
