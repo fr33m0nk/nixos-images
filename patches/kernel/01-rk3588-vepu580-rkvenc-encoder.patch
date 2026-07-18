@@ -2802,7 +2802,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1271 @@
+@@ -0,0 +1,1286 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -3496,6 +3496,10 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +		struct rkvenc_dev *mpp = session->mpp;
 +		u32 val = mpp ? mpp->hw_info->hw.hw_id : 0;
 +
++		/* For decode sessions, return VDPU381 hw_id placeholder */
++		if (session->device_type == MPP_DEVICE_RKVDEC)
++			val = 0x56445055; /* "VDPU" in little-endian */
++
 +		if (put_user(val, (u32 __user *)req->data))
 +			return -EFAULT;
 +	} break;
@@ -3507,23 +3511,26 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +
 +		session->device_type = client_type;
 +
-+		/* Attach to the encoder device */
-+		if (!session->mpp) {
-+			struct mpp_sub_dev *sd =
-+				session->srv->sub_devices[MPP_DEVICE_RKVENC];
-+			if (sd && sd->drv_priv)
-+				rkvenc_session_attach_device(session, sd->drv_priv);
-+		}
++		/* Encoder setup: attach to device + init private data */
++		if (client_type == MPP_DEVICE_RKVENC) {
++			if (!session->mpp) {
++				struct mpp_sub_dev *sd =
++					session->srv->sub_devices[MPP_DEVICE_RKVENC];
++				if (sd && sd->drv_priv)
++					rkvenc_session_attach_device(session,
++								      sd->drv_priv);
++			}
 +
-+		/* Init session private data */
-+		if (!session->priv) {
-+			struct rkvenc2_session_priv *priv;
++			/* Init session private data */
++			if (!session->priv) {
++				struct rkvenc2_session_priv *priv;
 +
 +			priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 +			if (priv) {
 +				init_rwsem(&priv->rw_sem);
 +				session->priv = priv;
 +			}
++		}
 +		}
 +	} break;
 +	case MPP_CMD_INIT_TRANS_TABLE: {
@@ -3749,11 +3756,18 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +		return ret;
 +	}
 +
-+	/* Phase 2: If we have SET requests, create a task and submit */
-+	if (msgs.set_cnt && session->mpp) {
-+		struct rkvenc_taskqueue *queue = session->mpp->queue;
++	/* Phase 2: Dispatch SET requests to encoder or decoder */
++	if (msgs.set_cnt) {
++		if (session->device_type == MPP_DEVICE_RKVDEC) {
++			/* Decode path: route to rkvdec2 via sub_dev ops */
++			struct mpp_sub_dev *dec =
++				session->srv->sub_devices[MPP_DEVICE_RKVDEC];
++			if (dec && dec->hw_run)
++				dec->hw_run(dec->drv_priv, &msgs);
++		} else if (session->mpp) {
++			struct rkvenc_taskqueue *queue = session->mpp->queue;
 +
-+		task = rkvenc_alloc_task(session, &msgs);
++			task = rkvenc_alloc_task(session, &msgs);
 +		if (!task) {
 +			rkvenc_err("alloc task failed\n");
 +			return -ENOMEM;
@@ -3776,7 +3790,8 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +		mutex_unlock(&queue->pending_lock);
 +
 +		/* Trigger the worker to run the task */
-+		kthread_queue_work(&queue->worker, &session->mpp->work);
++			kthread_queue_work(&queue->worker, &session->mpp->work);
++		}
 +	}
 +
 +	/* Phase 3: If we have POLL requests, wait for result */
