@@ -4489,7 +4489,7 @@ diff -ruN aa/include/uapi/linux/rkvenc.h bb/include/uapi/linux/rkvenc.h
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	1970-01-01 00:00:00.000000000 +0000
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,52 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Public API for external codec modules (rkvdec2) to register
@@ -4520,6 +4520,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 + * Returns ERR_PTR(-EPROBE_DEFER) if rkvenc hasn't probed yet.
 + */
 +struct rkvenc_service *rkvenc_service_get(void);
++void rkvenc_service_set_global(struct rkvenc_service *svc);
 +
 +/*
 + * Register a decoder core with the mpp_service.
