@@ -17,6 +17,10 @@
 /dts-v1/;
 /plugin/;
 
+/ {
+	compatible = "rockchip,rk3588";
+};
+
 &pcie2x1l0 {
 	status = "disabled";
 };

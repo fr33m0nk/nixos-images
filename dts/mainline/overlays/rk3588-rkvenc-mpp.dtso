@@ -16,6 +16,10 @@
 /dts-v1/;
 /plugin/;
 
+/ {
+	compatible = "rockchip,rk3588";
+};
+
 /*
  * Raw numeric values (no C preprocessor needed):
  *   Clock IDs:  ACLK_RKVENC0=438  HCLK_RKVENC0=437  CLK_RKVENC0_CORE=439
