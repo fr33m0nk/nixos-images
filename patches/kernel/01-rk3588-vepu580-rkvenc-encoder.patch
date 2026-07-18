@@ -63,7 +63,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/Makefile bb/drivers/media/pl
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c	2026-02-09 09:17:29
-@@ -0,0 +1,481 @@
+@@ -0,0 +1,482 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - Platform driver
@@ -411,7 +411,8 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c bb/drivers/medi
 +
 +	/* If this is the main core, register with the service */
 +	if (enc->ccu && enc == enc->ccu->main_core) {
-+		enc->srv->sub_devices[MPP_DEVICE_RKVENC] = enc;
++		enc->srv->sub_devices[MPP_DEVICE_RKVENC] =
++			rkvenc_sub_dev_alloc(enc);
 +		set_bit(MPP_DEVICE_RKVENC, &enc->srv->hw_support);
 +	}
 +
@@ -1440,7 +1441,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.c bb/drivers/media
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h bb/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h	2026-02-07 21:25:19
-@@ -0,0 +1,881 @@
+@@ -0,0 +1,888 @@
 +/* SPDX-License-Identifier: (GPL-2.0+ OR MIT) */
 +/*
 + * Rockchip VEPU580 encoder driver - Hardware definitions
@@ -1857,6 +1858,13 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h bb/drivers/media
 +	u32 val;
 +};
 +
++/* ---- Shared sub-device wrapper (encoder and decoder both use this) ---- */
++struct mpp_sub_dev {
++	void *drv_priv;		/* struct rkvenc_dev * or struct rkvdec2_dev * */
++	int (*hw_run)(void *priv, void *task);
++	void (*hw_irq)(void *priv);
++};
++
 +/* ---- MPP service ---- */
 +struct rkvenc_service {
 +	struct device *dev;
@@ -1870,7 +1878,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_hw.h bb/drivers/media
 +	u32 reset_group_cnt;
 +	struct rkvenc_reset_group *reset_groups[MPP_DEVICE_BUTT];
 +
-+	struct rkvenc_dev *sub_devices[MPP_DEVICE_BUTT];
++	struct mpp_sub_dev *sub_devices[MPP_DEVICE_BUTT];
 +	unsigned long hw_support;
 +	struct rkvenc_grf_info grf_infos[MPP_DEVICE_BUTT];
 +
@@ -2792,7 +2800,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1030 @@
+@@ -0,0 +1,1261 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -3499,11 +3507,10 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +
 +		/* Attach to the encoder device */
 +		if (!session->mpp) {
-+			struct rkvenc_dev *dev =
++			struct mpp_sub_dev *sd =
 +				session->srv->sub_devices[MPP_DEVICE_RKVENC];
-+
-+			if (dev)
-+				rkvenc_session_attach_device(session, dev);
++			if (sd && sd->drv_priv)
++				rkvenc_session_attach_device(session, sd->drv_priv);
 +		}
 +
 +		/* Init session private data */
@@ -3794,14 +3801,16 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +
 +	session->srv = srv;
 +
-+	if (!srv->sub_devices[MPP_DEVICE_RKVENC]) {
++	if (!srv->sub_devices[MPP_DEVICE_RKVENC] ||
++	    !srv->sub_devices[MPP_DEVICE_RKVENC]->drv_priv) {
 +		rkvenc_session_deinit(session);
 +		return -ENODEV;
 +	}
 +
 +	mutex_lock(&srv->session_lock);
 +	list_add_tail(&session->service_link, &srv->session_list);
-+	session->index = atomic_inc_return(&srv->sub_devices[MPP_DEVICE_RKVENC]->session_index);
++	session->index = atomic_inc_return(
++		&((struct rkvenc_dev *)srv->sub_devices[MPP_DEVICE_RKVENC]->drv_priv)->session_index);
 +	mutex_unlock(&srv->session_lock);
 +
 +	filp->private_data = session;
@@ -4005,6 +4014,15 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +
 +static struct rkvenc_service *global_service;
 +
++struct mpp_sub_dev *rkvenc_sub_dev_alloc(void *drv_priv)
++{
++	struct mpp_sub_dev *sd = kzalloc(sizeof(*sd), GFP_KERNEL);
++	if (!sd)
++		return NULL;
++	sd->drv_priv = drv_priv;
++	return sd;
++}
++
 +struct rkvenc_service *rkvenc_service_get(void)
 +{
 +	if (!global_service)
@@ -4022,7 +4040,10 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +	if (svc->sub_devices[MPP_DEVICE_RKVDEC])
 +		return -EBUSY;
 +
-+	svc->sub_devices[MPP_DEVICE_RKVDEC] = (void *)pdev;
++	struct mpp_sub_dev *sd = rkvenc_sub_dev_alloc(pdev);
++	if (!sd)
++		return -ENOMEM;
++	svc->sub_devices[MPP_DEVICE_RKVDEC] = sd;
 +	set_bit(MPP_DEVICE_RKVDEC, &svc->hw_support);
 +	return 0;
 +}
@@ -4032,6 +4053,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +{
 +	if (!svc)
 +		return;
++	kfree(svc->sub_devices[MPP_DEVICE_RKVDEC]);
 +	svc->sub_devices[MPP_DEVICE_RKVDEC] = NULL;
 +	clear_bit(MPP_DEVICE_RKVDEC, &svc->hw_support);
 +}
@@ -4435,7 +4457,7 @@ diff -ruN aa/include/uapi/linux/rkvenc.h bb/include/uapi/linux/rkvenc.h
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	1970-01-01 00:00:00.000000000 +0000
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,44 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Public API for external codec modules (rkvdec2) to register
