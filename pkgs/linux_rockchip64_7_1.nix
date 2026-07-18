@@ -42,11 +42,9 @@ buildLinux {
     # is restricted (e.g. Lima NixOS VMs).  Without this, mkfs.btrfs succeeds
     # but mount -t btrfs falls back to FUSE which chokes on subvol=.
     BTRFS_FS = yes;
-    # VM virtio drivers — required when our kernel is used for the disko VM
+    # virtio-rng — missing from Armbian defconfig, required when our
+    # kernel is used for the disko VM (NixOS shrunk-initrd needs it)
     HW_RANDOM_VIRTIO = yes;
-    VIRTIO_PCI = yes;
-    VIRTIO_BLK = yes;
-    VIRTIO_BALLOON = yes;
   };
 
   enableCommonConfig = false;
