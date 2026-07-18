@@ -1,4 +1,8 @@
 {
+  boot.supportedFilesystems = [ "btrfs" ];
+  # Required for the disko VM to mount BTRFS during image creation.
+  boot.initrd.kernelModules = [ "btrfs" ];
+
   disko = {
     memSize = 4096;
     enableConfig = true;
