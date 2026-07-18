@@ -222,13 +222,15 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	return 0;
 +
 +err_irq:   rkvdec2_task_destroy(rdev->task_mgr);
-+err_task:  rkvdec2_service_destroy(rdev->service);
-+err_mpp:   rkvdec2_service_destroy(rdev->service);
++		/* fall through — register succeeded on this path */
++err_task:
 +	{
 +		struct rkvenc_service *mpp = rkvenc_service_get();
 +		if (!IS_ERR(mpp))
 +			rkvenc_service_unregister_decoder(mpp);
 +	}
++		/* fall through */
++err_mpp:   rkvdec2_service_destroy(rdev->service);
 +err_service:
 +	rkvdec2_reset_assert(rdev);
 +	rkvdec2_clk_disable(rdev);
