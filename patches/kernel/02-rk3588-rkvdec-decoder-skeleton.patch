@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,229 @@
+@@ -0,0 +1,248 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -105,6 +105,24 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	clk_disable_unprepare(rdev->cabac);
 +	clk_disable_unprepare(rdev->ahb);
 +	clk_disable_unprepare(rdev->axi);
++}
++
++/* Callback thunks for the mpp_service dispatch */
++static int rkvdec2_submit(void *priv, void *task)
++{
++	struct rkvdec2_dev *rdev = platform_get_drvdata(priv);
++	if (!rdev || !rdev->task_mgr)
++		return -ENODEV;
++	/* Layer 2b: dispatch to HAL — stub returns success */
++	return 0;
++}
++
++static void rkvdec2_irq_cb(void *priv)
++{
++	struct rkvdec2_dev *rdev = platform_get_drvdata(priv);
++	if (!rdev || !rdev->task_mgr)
++		return;
++	rkvdec2_task_irq_thread(rdev->task_mgr);
 +}
 +
 +static int rkvdec2_get_clocks(struct rkvdec2_dev *rdev, struct device *dev)
@@ -196,7 +214,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +			dev_info(dev, "mpp_service deferred (%d)\n", ret);
 +			goto err_mpp;
 +		}
-+		ret = rkvenc_service_register_decoder(mpp, pdev, rdev->core_id);
++		ret = rkvenc_service_register_decoder(mpp, pdev, rdev->core_id,
++						    rkvdec2_submit, rkvdec2_irq_cb);
 +		if (ret) {
 +			dev_err(dev, "decoder register failed: %d\n", ret);
 +			goto err_mpp;
