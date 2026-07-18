@@ -32,10 +32,6 @@
       enable = true;
       overlays = [
         {
-          name = "gpu-cap-800mhz";
-          dtsFile = ../dts/mainline/overlays/rk3588-gpu-cap-800mhz.dtso;
-        }
-        {
           name = "rkvenc-mpp";
           dtsFile = ../dts/mainline/overlays/rk3588-rkvenc-mpp.dtso;
         }
@@ -64,6 +60,14 @@
   };
 
   services = {
+    # Cap Mali-G610 GPU at 800 MHz — panthor devfreq exposes
+    # 900/1000 MHz OPPs programmatically (bypassing DT overlay).
+    # Those frequencies are unstable on many RK3588 chips, causing
+    # CSG suspend timeout panics.  udev fires when devfreq appears.
+    udev.extraRules = ''
+      SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu", ATTR{max_freq}="800000000"
+    '';
+
     usb-rndis.enable = lib.mkDefault true;
 
     pipewire.wireplumber.extraConfig = {
