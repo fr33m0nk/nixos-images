@@ -87,6 +87,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_drv.c bb/drivers/medi
 +#include <linux/string.h>
 +
 +#include "rkvenc_hw.h"
++#include "rkvenc_service.h"
 +
 +/* ---- PM ops ---- */
 +static int __maybe_unused rkvenc_runtime_suspend(struct device *dev)
@@ -4508,7 +4509,10 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 +
 +#include <linux/platform_device.h>
 +
++struct mpp_sub_dev;
 +struct rkvenc_service;
++
++struct mpp_sub_dev *rkvenc_sub_dev_alloc(void *drv_priv);
 +
 +/*
 + * Get the shared mpp_service singleton (created by rkvenc probe).
