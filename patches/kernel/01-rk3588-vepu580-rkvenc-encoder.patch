@@ -3771,28 +3771,28 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +			struct rkvenc_taskqueue *queue = session->mpp->queue;
 +
 +			task = rkvenc_alloc_task(session, &msgs);
-+		if (!task) {
-+			rkvenc_err("alloc task failed\n");
-+			return -ENOMEM;
-+		}
++			if (!task) {
++				rkvenc_err("alloc task failed\n");
++				return -ENOMEM;
++			}
 +
-+		msgs.task = &task->mpp_task;
-+		msgs.mpp = session->mpp;
-+		msgs.queue = queue;
++			msgs.task = &task->mpp_task;
++			msgs.mpp = session->mpp;
++			msgs.queue = queue;
 +
-+		/* Add to pending list */
-+		kref_get(&task->mpp_task.ref);
-+		mutex_lock(&session->pending_lock);
-+		list_add_tail(&task->mpp_task.pending_link, &session->pending_list);
-+		mutex_unlock(&session->pending_lock);
++			/* Add to pending list */
++			kref_get(&task->mpp_task.ref);
++			mutex_lock(&session->pending_lock);
++			list_add_tail(&task->mpp_task.pending_link, &session->pending_list);
++			mutex_unlock(&session->pending_lock);
 +
-+		/* Add to task queue and trigger worker */
-+		set_bit(TASK_STATE_PENDING, &task->mpp_task.state);
-+		mutex_lock(&queue->pending_lock);
-+		list_add_tail(&task->mpp_task.queue_link, &queue->pending_list);
-+		mutex_unlock(&queue->pending_lock);
++			/* Add to task queue and trigger worker */
++			set_bit(TASK_STATE_PENDING, &task->mpp_task.state);
++			mutex_lock(&queue->pending_lock);
++			list_add_tail(&task->mpp_task.queue_link, &queue->pending_list);
++			mutex_unlock(&queue->pending_lock);
 +
-+		/* Trigger the worker to run the task */
++			/* Trigger the worker to run the task */
 +			kthread_queue_work(&queue->worker, &session->mpp->work);
 +		}
 +	}
