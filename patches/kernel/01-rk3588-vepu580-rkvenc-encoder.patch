@@ -2792,7 +2792,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1206 @@
+@@ -0,0 +1,1030 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -3962,6 +3962,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +	}
 +
 +	platform_set_drvdata(pdev, srv);
++	rkvenc_service_set_global(srv);
 +	dev_info(dev, "mpp_service probe success\n");
 +
 +	return 0;
@@ -3999,6 +4000,37 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +
 +	return 0;
 +}
++
++/* ---- Exported API for cross-module decoder registration ---- */
++
++static struct rkvenc_service *global_service;
++
++struct rkvenc_service *rkvenc_service_get(void)
++{
++	if (!global_service)
++		return ERR_PTR(-EPROBE_DEFER);
++	return global_service;
++}
++EXPORT_SYMBOL_GPL(rkvenc_service_get);
++
++int rkvenc_service_register_decoder(struct rkvenc_service *svc,
++				    struct platform_device *pdev,
++				    u32 core_id)
++{
++	if (!svc || !pdev)
++		return -EINVAL;
++	if (svc->sub_devices[MPP_DEVICE_RKVDEC])
++		return -EBUSY;
++
++	svc->sub_devices[MPP_DEVICE_RKVDEC] = (void *)pdev;
++	set_bit(MPP_DEVICE_RKVDEC, &svc->hw_support);
++	return 0;
++}
++EXPORT_SYMBOL_GPL(rkvenc_service_register_decoder);
++
++void rkvenc_service_set_global(struct rkvenc_service *svc)
++{ global_service = svc; }
++EXPORT_SYMBOL_GPL(rkvenc_service_set_global);
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c	2026-02-07 21:27:09
@@ -4437,44 +4469,3 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 +				    u32 core_id);
 +
 +#endif /* _RKVENCSERVICE_API_H_ */
-diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
---- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
-+++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
-@@ -3963,3 +3963,37 @@
-+	/* Publish the service for external modules (rkvdec2) */
-+	rkvenc_service_set_global(srv);
-+
- 	dev_info(dev, "mpp_service probe success\n");
- 	return 0;
- }
-+
-+/* ---- Exported API for cross-module decoder registration ---- */
-+
-+static struct rkvenc_service *global_service;
-+
-+struct rkvenc_service *rkvenc_service_get(void)
-+{
-+	if (!global_service)
-+		return ERR_PTR(-EPROBE_DEFER);
-+	return global_service;
-+}
-+EXPORT_SYMBOL_GPL(rkvenc_service_get);
-+
-+int rkvenc_service_register_decoder(struct rkvenc_service *svc,
-+				    struct platform_device *pdev,
-+				    u32 core_id)
-+{
-+	if (!svc || !pdev)
-+		return -EINVAL;
-+	if (svc->sub_devices[MPP_DEVICE_RKVDEC])
-+		return -EBUSY;
-+
-+	svc->sub_devices[MPP_DEVICE_RKVDEC] = (void *)pdev;
-+	set_bit(MPP_DEVICE_RKVDEC, &svc->hw_support);
-+	return 0;
-+}
-+EXPORT_SYMBOL_GPL(rkvenc_service_register_decoder);
-+
-+void rkvenc_service_set_global(struct rkvenc_service *svc)
-+{ global_service = svc; }
-+EXPORT_SYMBOL_GPL(rkvenc_service_set_global);
