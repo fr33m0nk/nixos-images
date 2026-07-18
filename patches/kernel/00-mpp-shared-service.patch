@@ -1,0 +1,107 @@
+diff -ruN a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -1569,6 +1569,7 @@ enum MPP_DEVICE_TYPE {
+ 	MPP_DEVICE_RKJPEGD		= 13,
+ 
+ 	MPP_DEVICE_RKVENC		= 16,
++	MPP_DEVICE_RKVDEC2		= 10,	/* VDPU381 stateful decoder */
+ 	MPP_DEVICE_VEPU1		= 17,
+ 	MPP_DEVICE_BUTT			= 30,
+ };
+diff -ruN a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	1970-01-01 00:00:00.000000000 +0000
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	2026-07-18 00:00:00.000000000 +0000
+@@ -0,0 +1,44 @@
++/* SPDX-License-Identifier: GPL-2.0-only */
++/*
++ * Public API for external codec modules (rkvdec2) to register
++ * with the rkvenc-created /dev/mpp_service singleton.
++ *
++ * rkvenc.ko creates the service at probe.  rkvdec2.ko calls
++ * rkvenc_service_get() → rkvenc_service_register_decoder() to
++ * attach a VDPU381 decode core.  Userspace sees both encoder
++ * and decoder cores through the same /dev/mpp_service fd.
++ *
++ * Copyright (C) 2026 fr33m0nk
++ */
++#ifndef _RKVENCSERVICE_API_H_
++#define _RKVENCSERVICE_API_H_
++
++#include <linux/types.h>
++#include <linux/platform_device.h>
++
++struct rkvenc_service;
++
++/* Opaque handle for a registered decoder core */
++struct rkvenc_registered_core;
++
++/*
++ * Get the shared mpp_service singleton (created by rkvenc probe).
++ * Returns NULL with -EPROBE_DEFER if rkvenc hasn't probed yet.
++ */
++struct rkvenc_service *rkvenc_service_get(void);
++
++/*
++ * Register a decoder core with the mpp_service.
++ * @svc:    service from rkvenc_service_get()
++ * @pdev:   the rkvdec2 platform device (DT probed)
++ * @core_id: core index (from DT rockchip,core-id)
++ *
++ * Sets up sub_devices[MPP_DEVICE_RKVDEC2], task queue, and
++ * hw_support bit for the service to dispatch decode ioctls.
++ */
++int rkvenc_service_register_decoder(struct rkvenc_service *svc,
++				    struct platform_device *pdev,
++				    u32 core_id);
++
++#endif /* _RKVENCSERVICE_API_H_ */
+
+diff -ruN a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+--- a/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
++++ b/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
+@@ -3961,7 +3961,40 @@ int rkvenc_service_probe(struct platform_device *pdev)
+ 	init_waitqueue_head(&srv->wait);
+ 
+ 	rkvenc_drv.infos[MPP_DRIVER_RKVENC] = &rkvenc2_infos;
+
++	/* Publish the global pointer for external modules (rkvdec2) */
++	srv->global = srv;
++
+ 	dev_info(dev, "mpp_service probe success\n");
+ 	return 0;
+ }
++
++/* ---- Exported API for decoder core registration ---- */
++
++static struct rkvenc_service *global_service;
++
++struct rkvenc_service *rkvenc_service_get(void)
++{
++	if (!global_service)
++		return ERR_PTR(-EPROBE_DEFER);
++	return global_service;
++}
++EXPORT_SYMBOL_GPL(rkvenc_service_get);
++
++int rkvenc_service_register_decoder(struct rkvenc_service *svc,
++				    struct platform_device *pdev,
++				    u32 core_id)
++{
++	if (!svc || !pdev)
++		return -EINVAL;
++	if (svc->sub_devices[MPP_DEVICE_RKVDEC2])
++		return -EBUSY;
++
++	/* Store the decoder platform device — the existing
++	 * task/irq infrastructure will use it for decode jobs.
++	 * rkvdec2's probe already set up clocks, resets, and IRQ. */
++	svc->sub_devices[MPP_DEVICE_RKVDEC2] = (void *)pdev;
++	set_bit(MPP_DEVICE_RKVDEC2, &svc->hw_support);
++	return 0;
++}
++EXPORT_SYMBOL_GPL(rkvenc_service_register_decoder);
++
++/* Set the global pointer during rkvenc service probe */
++void rkvenc_service_set_global(struct rkvenc_service *svc) { global_service = svc; }
++EXPORT_SYMBOL_GPL(rkvenc_service_set_global);

@@ -19,7 +19,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Kconfig b/drivers/media/plat
 @@ -0,0 +1,13 @@
 +config VIDEO_ROCKCHIP_RKVDEC2
 +	tristate "Rockchip VDPU381 MPP decoder (rkvdec2)"
-+	depends on ARCH_ROCKCHIP || COMPILE_TEST
++	depends on (ARCH_ROCKCHIP || COMPILE_TEST) && VIDEO_ROCKCHIP_RKVENC
 +	depends on VIDEO_DEV && IOMMU_API
 +	select VIDEOBUF2_DMA_CONTIG
 +	help
@@ -53,6 +53,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_service.h"
 +#include "rkvdec2_task.h"
++#include "../rkvenc/rkvenc_service.h"
 +
 +struct rkvdec2_dev {
 +	struct device *dev;
@@ -114,7 +115,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	rdev->cabac = devm_clk_get(dev, "cabac");
 +	rdev->core  = devm_clk_get(dev, "core");
 +	rdev->hevc_cabac = devm_clk_get(dev, "hevc_cabac");
-+	if (IS_ERR(rdev->axi) || IS_ERR(rdev->ahb) || IS_ERR(rdev->core))
++	if (IS_ERR(rdev->axi) || IS_ERR(rdev->ahb) || IS_ERR(rdev->core) ||
++	    IS_ERR(rdev->cabac) || IS_ERR(rdev->hevc_cabac))
 +		return dev_err_probe(dev, -ENODEV, "clock missing\n");
 +	return 0;
 +}
@@ -186,6 +188,22 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +		goto err_service;
 +	}
 +
++	/* Register with the shared mpp_service (created by rkvenc.ko).
++	 * If rkvenc hasn't probed yet, EPROBE_DEFER triggers reprobe. */
++	{
++		struct rkvenc_service *mpp = rkvenc_service_get();
++		if (IS_ERR(mpp)) {
++			ret = PTR_ERR(mpp);
++			dev_info(dev, "mpp_service deferred (%d)\n", ret);
++			goto err_mpp;
++		}
++		ret = rkvenc_service_register_decoder(mpp, pdev, rdev->core_id);
++		if (ret) {
++			dev_err(dev, "decoder register failed: %d\n", ret);
++			goto err_mpp;
++		}
++	}
++
 +	rdev->task_mgr = rkvdec2_task_create(dev, rdev->service, rdev->regs, rdev->core_id);
 +	if (IS_ERR(rdev->task_mgr)) {
 +		ret = PTR_ERR(rdev->task_mgr);
@@ -206,6 +224,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +
 +err_irq:   rkvdec2_task_destroy(rdev->task_mgr);
 +err_task:  rkvdec2_service_destroy(rdev->service);
++err_mpp:
 +err_service:
 +	rkvdec2_reset_assert(rdev);
 +	rkvdec2_clk_disable(rdev);
