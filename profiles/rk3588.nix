@@ -32,8 +32,8 @@
       enable = true;
       overlays = [
         {
-          name = "gpu-opp-table";
-          dtsFile = ../dts/mainline/overlays/rk3588-gpu-opp-voltage-fix.dtso;
+          name = "gpu-cap-800mhz";
+          dtsFile = ../dts/mainline/overlays/rk3588-gpu-cap-800mhz.dtso;
         }
       ];
     };

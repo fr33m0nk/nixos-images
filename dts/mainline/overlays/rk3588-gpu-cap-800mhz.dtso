@@ -1,0 +1,22 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+// DTS overlay: cap the Mali-G610 GPU at 800 MHz.
+//
+// On RK3588 the 900/1000 MHz GPU OPPs are driven by the voltage-dependent
+// PVTPLL, engaged by BL31/TF-A via SCMI. On many chips these rates are
+// unstable and produce panthor CS_FATAL faults + GPU page faults under load
+// (same signature as reaching for higher overclocks). vdd_gpu_s0 is limited
+// to 950 mV (regulator-max-microvolt), which is not enough headroom to
+// stabilise the PVTPLL at those rates, so disable both. 800 MHz @ 750 mV is
+// the stable ceiling; BL31 keeps the GPU on a normal PLL below this point.
+
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "rockchip,rk3588";
+};
+
+&gpu_opp_table {
+	opp-900000000  { status = "disabled"; };
+	opp-1000000000 { status = "disabled"; };
+};
