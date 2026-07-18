@@ -1,6 +1,8 @@
 {
   boot.supportedFilesystems = [ "btrfs" ];
   # Required for the disko VM to mount BTRFS during image creation.
+  # boot.supportedFilesystems alone does not add to boot.initrd.kernelModules
+  # (that list is derived from fileSystems, not supportedFilesystems).
   boot.initrd.kernelModules = [ "btrfs" ];
 
   disko = {
