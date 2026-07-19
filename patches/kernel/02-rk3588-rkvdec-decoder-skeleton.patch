@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,338 @@
+@@ -0,0 +1,343 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -326,6 +326,11 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	}
 +
 +	pm_runtime_enable(dev);
++	/* Bring-up: hold the RKVDEC0 power domain on. Without this the
++	 * device is runtime-suspended after probe, genpd gates PD_RKVDEC0,
++	 * and the first register write in hw_run hits an unpowered block ->
++	 * AXI stall -> whole-SoC hang. TODO: per-task get/put once stable. */
++	pm_runtime_get_sync(dev);
 +	dev_info(dev, "VDPU381 core %u ready\n", rdev->core_id);
 +	return 0;
 +
