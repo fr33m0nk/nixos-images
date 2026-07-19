@@ -2803,7 +2803,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1296 @@
+@@ -0,0 +1,1312 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -4100,6 +4100,22 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +void rkvenc_service_set_global(struct rkvenc_service *svc)
 +{ global_service = svc; }
 +EXPORT_SYMBOL_GPL(rkvenc_service_set_global);
++
++/* Task message accessors — safe wrappers so the decoder doesn't
++ * need to know struct rkvenc_task_msgs layout internally. */
++u32 rkvenc_task_msgs_req_cnt(struct rkvenc_task_msgs *m)
++{
++	return m ? m->req_cnt : 0;
++}
++EXPORT_SYMBOL_GPL(rkvenc_task_msgs_req_cnt);
++
++struct mpp_request *rkvenc_task_msgs_reqs(struct rkvenc_task_msgs *m)
++{
++	return m ? m->reqs : NULL;
++}
++EXPORT_SYMBOL_GPL(rkvenc_task_msgs_reqs);
++
++/* ---- End exports ---- */
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_task.c	2026-02-07 21:27:09
@@ -4495,7 +4511,7 @@ diff -ruN aa/include/uapi/linux/rkvenc.h bb/include/uapi/linux/rkvenc.h
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	1970-01-01 00:00:00.000000000 +0000
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,76 @@
+@@ -0,0 +1,59 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Public API for external codec modules (rkvdec2) to register
@@ -4515,33 +4531,11 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 +#define _RKVENCSERVICE_API_H_
 +
 +#include <linux/platform_device.h>
-+
-+/* MPP message structures — shared between encoder and decoder.
-+ * Both sides need to parse SET_REG_WRITE/READ/ADDR_OFFSET in the
-+ * ioctl dispatch to capture register blobs from userspace. */
-+struct mpp_request {
-+	__u32 cmd;
-+	__u32 flags;
-+	__u32 size;
-+	__u32 offset;
-+	void __user *data;
-+};
-+
-+#define MPP_CMD_SET_REG_WRITE    (0x100 + 0)
-+#define MPP_CMD_SET_REG_READ     (0x100 + 1)
-+#define MPP_CMD_SET_REG_ADDR_OFFSET (0x100 + 3)
-+
-+/* Minimal forward declaration matching the real rkvenc_task_msgs layout.
-+ * Only req_cnt + reqs[] are at known offsets; pad the rest. */
-+struct rkvenc_task_msgs {
-+	u8 _pad[68];
-+	u32 req_cnt;
-+	u8 _pad2[16];
-+	struct mpp_request reqs[1];
-+};
++#include <uapi/linux/rkvenc.h>
 +
 +struct mpp_sub_dev;
 +struct rkvenc_service;
++struct rkvenc_task_msgs;
 +
 +struct mpp_sub_dev *rkvenc_sub_dev_alloc(void *drv_priv);
 +
@@ -4570,5 +4564,10 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 +				    void (*hw_irq)(void *priv));
 +
 +void rkvenc_service_unregister_decoder(struct rkvenc_service *svc);
++
++/* Safe accessors for rkvenc_task_msgs — the decoder uses these
++ * instead of depending on the struct layout directly. */
++u32 rkvenc_task_msgs_req_cnt(struct rkvenc_task_msgs *m);
++struct mpp_request *rkvenc_task_msgs_reqs(struct rkvenc_task_msgs *m);
 +
 +#endif /* _RKVENCSERVICE_API_H_ */

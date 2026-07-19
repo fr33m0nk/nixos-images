@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,299 @@
+@@ -0,0 +1,302 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -108,51 +108,54 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +}
 +
 +/* Callback thunks for the mpp_service dispatch */
-+static int rkvdec2_submit(void *priv, void *task_msgs)
++static int rkvdec2_submit(void *priv, void *msgs_ptr)
 +{
++	struct rkvenc_task_msgs *msgs = msgs_ptr;
 +	struct rkvdec2_dev *rdev = platform_get_drvdata(priv);
-+	struct mpp_request *req;
++	struct mpp_request *reqs, *req;
 +	struct rkvdec2_task *task;
-+	u32 i;
++	u32 i, cnt;
 +
 +	if (!rdev || !rdev->task_mgr)
 +		return -ENODEV;
++
++	cnt  = rkvenc_task_msgs_req_cnt(msgs);
++	reqs = rkvenc_task_msgs_reqs(msgs);
++	if (!reqs)
++		return 0;
 +
 +	/* Allocate a decode task with register array */
 +	task = kzalloc(sizeof(*task), GFP_KERNEL);
 +	if (!task)
 +		return -ENOMEM;
 +
-+	/* Parse the ioctl message list — copy SET_REG_WRITE spans
-+	 * into task->reg[], record each span in w_reqs[] for hw_run. */
-+	{
-+		struct rkvenc_task_msgs *msgs = task_msgs;
-+		for (i = 0; i < (u32)msgs->req_cnt; i++) {
-+			req = &msgs->reqs[i];
-+			if (!req->size)
-+				continue;
-+			switch (req->cmd) {
-+			case MPP_CMD_SET_REG_WRITE: {
-+				u32 off = req->offset / 4;
-+				u32 len = req->size;
-+				if (off + len/4 > RKVDEC2_REG_NUM)
-+					continue;
-+				if (copy_from_user(&task->reg[off],
-+						   req->data, len))
-+					goto err_free;
-+				task->w_reqs[task->w_req_cnt].offset = req->offset;
-+				task->w_reqs[task->w_req_cnt].size = req->size;
-+				task->w_req_cnt++;
-+				break;
-+			}
-+			case MPP_CMD_SET_REG_ADDR_OFFSET:
-+				/* TODO: fd→iova translation */
-+				break;
-+			}
++	/* Parse ioctl message list — copy SET_REG_WRITE spans
++	 * into task->reg[], record each in w_reqs[] for hw_run. */
++	for (i = 0; i < cnt; i++) {
++		req = &reqs[i];
++		if (!req->size)
++			continue;
++		switch (req->cmd) {
++		case MPP_CMD_SET_REG_WRITE: {
++			u32 off = req->offset / 4;
++			u32 len = req->size;
++			if (off + len/4 > RKVDEC2_REG_NUM ||
++			    task->w_req_cnt >= RKVDEC2_MAX_WRITE_PART)
++				goto err_free;
++			if (copy_from_user(&task->reg[off], req->data, len))
++				goto err_free;
++			task->w_reqs[task->w_req_cnt].offset = req->offset;
++			task->w_reqs[task->w_req_cnt].size   = req->size;
++			task->w_req_cnt++;
++			break;
++		}
++		case MPP_CMD_SET_REG_ADDR_OFFSET:
++			/* TODO: fd→iova translation */
++			break;
 +		}
 +	}
 +
-+	/* Enqueue to pending — the worker will call hw_run */
++	/* Enqueue to pending — worker calls hw_run */
 +	{
 +		struct rkvdec2_task_mgr *tm = rdev->task_mgr;
 +		unsigned long flags;
