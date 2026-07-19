@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,326 @@
+@@ -0,0 +1,333 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -156,6 +156,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +			task->w_reqs[task->w_req_cnt].offset = req->offset;
 +			task->w_reqs[task->w_req_cnt].size   = req->size;
 +			task->w_req_cnt++;
++			dev_info(rdev->dev, "  wr off=0x%x sz=%u\n",
++				 req->offset, req->size);
 +			break;
 +		}
 +		case MPP_CMD_SET_REG_ADDR_OFFSET:
@@ -171,6 +173,11 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +			break;
 +		}
 +	}
++
++	dev_info(rdev->dev,
++		 "captured: writes=%u reg[8]=%08x reg[9]=%08x reg[10]=%08x reg[11]=%08x\n",
++		 task->w_req_cnt, task->reg[8], task->reg[9],
++		 task->reg[10], task->reg[11]);
 +
 +	/* Resolve fd placeholders in address registers to iovas */
 +	ret = rkvdec2_translate_fd(task);
