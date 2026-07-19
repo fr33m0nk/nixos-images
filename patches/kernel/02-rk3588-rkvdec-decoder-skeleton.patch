@@ -287,7 +287,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,42 @@
+@@ -0,0 +1,37 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * VDPU381 decode HAL interface.
@@ -305,22 +305,17 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 +	RKVDEC2_CODEC_MAX
 +};
 +
-+struct rkvdec2_frame_desc {
-+	u32 width, height, codec, profile, level;
-+	dma_addr_t bs_dma;        u32 bs_size;
-+	dma_addr_t ref_dma[16];   u32 ref_count;
-+	dma_addr_t dst_dma;       u32 dst_stride;
-+	dma_addr_t dpb_dma[16];   u32 dpb_count;
-+	union {
-+		struct { u32 sps_flags, pps_flags, slice_flags, scaling_matrix;
-+			 u32 ref_l0, ref_l1; } h264;
-+		struct { u32 sps_flags, pps_flags, slice_flags, scaling_list;
-+			 u32 ref_l0; } hevc;
-+		struct { u32 frame_type, profile, bit_depth, ref_count; } vp9;
-+	} codec_params;
-+};
++/* RK3588 VDPU381 register-file layout - vendor rkvdec_v2_hw_info
++ * (rockchip,rkv-decoder-v2-ccu -> rkvdec_rk3588_data -> rkvdec_v2_hw_info). */
++#define RKVDEC2_REG_NUM         279
++#define RKVDEC2_REG_END         278
++#define RKVDEC2_REG_EN          10
++#define RKVDEC2_REG_FMT         9
++#define RKVDEC2_MAX_WRITE_PART  6
 +
-+int  rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_frame_desc *desc);
++struct rkvdec2_task;
++
++int  rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_task *task);
 +void rkvdec2_hw_irq_handler(void __iomem *regs, u32 *status);
 +void rkvdec2_hw_power_on(void __iomem *regs);
 +void rkvdec2_hw_power_off(void __iomem *regs);
@@ -333,20 +328,21 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,128 @@
+@@ -0,0 +1,106 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
-+ * VDPU381 decode HAL — register-level programming (STUB).
-+ * Phase 1: probe init, power mgmt, IRQ handling.
-+ * Phase 2: H.264 registers (port from mpp_rkvdec2.c).
-+ * Phase 3: HEVC + VP9 registers.
++ * VDPU381 decode HAL - replays the userspace-computed register blob
++ * (vendor rkvdec2_run model: cache cfg -> reg blob -> START_EN).
 + * Copyright (C) 2026 fr33m0nk
 + */
 +#include <linux/io.h>
++#include <linux/bits.h>
 +#include <linux/delay.h>
++#include <linux/printk.h>
 +#include "rkvdec2_hw.h"
++#include "rkvdec2_task.h"
 +
-+/* VDPU381 register map — from armbian/linux-rockchip rk-6.1-rkr5.1 */
++/* VDPU381 register map - from armbian/linux-rockchip rk-6.1-rkr5.1 */
 +/* Cache configuration */
 +#define VDPU_CACHE0_SIZE       0x51c
 +#define VDPU_CACHE1_SIZE       0x55c
@@ -368,14 +364,6 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +#define VDPU_SOFT_RESET         0x0014
 +#define VDPU_SOFTRESET_EN       BIT(20)
 +
-+/* VDPU383 (RK3588) hardware info */
-+#define RKVDEC2_REG_NUM         360
-+#define RKVDEC2_REG_END         359
-+#define RKVDEC2_REG_EN          16
-+#define RKVDEC2_REG_FMT         8
-+#define RKVDEC2_REG_RET_STATUS  15
-+#define RKVDEC2_MAX_WRITE_PART  6
-+
 +/* IRQ bits */
 +#define VDPU_IRQ_DEC_DONE   BIT(0)
 +#define VDPU_IRQ_DEC_ERROR  BIT(1)
@@ -385,28 +373,11 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +#define R(reg)    readl(regs + (reg))
 +#define W(reg,v)  writel(v, regs + (reg))
 +
-+/* Per-frame task descriptor — the decode blob from userspace */
-+struct rkvdec2_task {
-+	u32 reg[RKVDEC2_REG_NUM];
-+	struct { u32 offset; u32 size; } w_reqs[RKVDEC2_MAX_WRITE_PART];
-+	u32 w_req_cnt;
-+};
-+
-+int  rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_task *task);
-+void rkvdec2_hw_irq_handler(void __iomem *regs, u32 *status);
-+void rkvdec2_hw_power_on(void __iomem *regs);
-+void rkvdec2_hw_power_off(void __iomem *regs);
-+int  rkvdec2_hw_init(void __iomem *regs);
-+
-+#define RKVDEC2_MAX_WIDTH  7680
-+#define RKVDEC2_MAX_HEIGHT 4320
-+#endif
-+
 +int rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_task *task)
 +{
 +	u32 i, reg_cache;
 +
-+	/* 1. Cache config — vendor default */
++	/* 1. Cache config - vendor default */
 +	reg_cache = VDPU_CACHE_CACHEABLE | VDPU_CACHE_READ_ALLOC | VDPU_CACHE_LINE_64;
 +	W(VDPU_CACHE0_SIZE, reg_cache);
 +	W(VDPU_CACHE1_SIZE, reg_cache);
@@ -415,15 +386,17 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +	W(VDPU_CLR_CACHE1, 1);
 +	W(VDPU_CLR_CACHE2, 1);
 +
-+	/* 2. Replay register blob from userspace */
++	/* 2. Replay register blob captured from userspace (SET_REG_WRITE) */
 +	for (i = 0; i < task->w_req_cnt; i++) {
 +		u32 off = task->w_reqs[i].offset / sizeof(u32);
 +		u32 end = off + task->w_reqs[i].size / sizeof(u32);
++		if (end > RKVDEC2_REG_NUM)
++			end = RKVDEC2_REG_NUM;
 +		for (; off < end; off++)
 +			W(off * sizeof(u32), task->reg[off]);
 +	}
 +
-+	/* 3. wmb + START */
++	/* 3. Barrier, then kick the hardware */
 +	wmb();
 +	W(VDPU_START_EN_BASE, task->reg[RKVDEC2_REG_EN] | VDPU_START_EN);
 +
@@ -626,16 +599,31 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c b/drivers/me
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,19 @@
+@@ -0,0 +1,34 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/* Task / job queue manager.  Copyright (C) 2026 fr33m0nk */
 +#ifndef _RKVDEC2_TASK_H_
 +#define _RKVDEC2_TASK_H_
 +#include <linux/device.h>
 +#include <linux/types.h>
++#include <linux/list.h>
++#include "rkvdec2_hw.h"
 +
 +struct rkvdec2_service;
 +struct rkvdec2_task_mgr;
++
++/* One decode job: the userspace register blob + queue bookkeeping.
++ * reg[] is filled by SET_REG_WRITE capture in the ioctl dispatch;
++ * w_reqs[] records the written spans, replayed to hardware in hw_run. */
++struct rkvdec2_task {
++	struct list_head node;
++	u32 reg[RKVDEC2_REG_NUM];
++	struct { u32 offset; u32 size; } w_reqs[RKVDEC2_MAX_WRITE_PART];
++	u32 w_req_cnt;
++	void *mpp_task;  /* opaque MPP userspace handle - wired in phase 2 */
++	u32 task_id;
++	int status;      /* 0=pending, 1=running, <0=error */
++};
 +
 +struct rkvdec2_task_mgr *rkvdec2_task_create(struct device *dev,
 +	struct rkvdec2_service *svc, void __iomem *regs, u32 core_id);
@@ -649,7 +637,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/med
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,109 @@
+@@ -0,0 +1,102 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Task / job queue manager for VDPU381 decode.
@@ -661,19 +649,12 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +#include <linux/spinlock.h>
 +#include <linux/list.h>
 +#include <linux/workqueue.h>
++#include <linux/err.h>
 +#include "rkvdec2_task.h"
 +#include "rkvdec2_service.h"
 +#include "rkvdec2_hw.h"
 +
 +#define MAX_INFLIGHT 4	/* VDPU381 multi-slot decode pipeline */
-+
-+struct rkvdec2_task {
-+	struct list_head node;
-+	struct rkvdec2_frame_desc desc;
-+	void *mpp_task;  /* opaque MPP userspace handle — wired in phase 2 */
-+	u32 task_id;
-+	int status;      /* 0=pending, 1=running, <0=error */
-+};
 +
 +struct rkvdec2_task_mgr {
 +	struct device *dev;
@@ -705,7 +686,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +		running++;
 +
 +		spin_unlock_irqrestore(&tm->lock, flags);
-+		ret = rkvdec2_hw_run(tm->regs, &task->desc);
++		ret = rkvdec2_hw_run(tm->regs, task);
 +		if (ret) {
 +			task->status = ret;
 +			dev_err(tm->dev, "decode task %u failed: %d\n", task->task_id, ret);
