@@ -333,7 +333,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,98 @@
+@@ -0,0 +1,128 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL — register-level programming (STUB).
@@ -346,34 +346,37 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +#include <linux/delay.h>
 +#include "rkvdec2_hw.h"
 +
-+/* Vendor VDPU381 register map (from armbian/linux-rockchip rk-6.1-rkr5.1) */
-+#define VDPU_REG_RLC_BASE        0x200   /* bitstream buffer config */
-+#define VDPU_REG_START_EN        0x28    /* start decode + write index */
-+#define VDPU_REG_INT_EN          0x380   /* interrupt enable */
-+#define VDPU_REG_STRIDE          0x50    /* Y stride (index 20 × 4) */
-+#define VDPU_REG_CACHE0_SIZE     0x51c   /* cache 0 config */
-+#define VDPU_REG_CACHE1_SIZE     0x55c
-+#define VDPU_REG_CACHE2_SIZE     0x59c
-+#define VDPU_REG_CLR_CACHE0      0x510   /* clear cache 0 */
-+#define VDPU_REG_CLR_CACHE1      0x550
-+#define VDPU_REG_CLR_CACHE2      0x590
-+#define VDPU_REG_AXI_CTRL        0x040   /* AXI read outstanding */
-+#define VDPU_REG_FORMAT          0x044   /* codec format select */
++/* VDPU381 register map — from armbian/linux-rockchip rk-6.1-rkr5.1 */
++/* Cache configuration */
++#define VDPU_CACHE0_SIZE       0x51c
++#define VDPU_CACHE1_SIZE       0x55c
++#define VDPU_CACHE2_SIZE       0x59c
++#define VDPU_CLR_CACHE0        0x510
++#define VDPU_CLR_CACHE1        0x550
++#define VDPU_CLR_CACHE2        0x590
++#define VDPU_CACHE_CACHEABLE    BIT(0)
++#define VDPU_CACHE_READ_ALLOC   BIT(1)
++#define VDPU_CACHE_LINE_64      BIT(4)
 +
-+#define VDPU_CACHE_LINE_64       BIT(4)
-+#define VDPU_CACHE_CACHEABLE      BIT(0)
-+#define VDPU_CACHE_READ_ALLOC     BIT(1)
++/* Start / IRQ / Reset */
++#define VDPU_START_EN_BASE     0x28
++#define VDPU_START_EN           BIT(0)
++#define VDPU_IRQ_STATUS        0x0004
++#define VDPU_IRQ_CLEAR         0x0008
++#define VDPU_IRQ_MASK          0x000C
++#define VDPU_POWER_CTRL        0x0010
++#define VDPU_SOFT_RESET         0x0014
++#define VDPU_SOFTRESET_EN       BIT(20)
 +
-+/* Basic register offsets (still needed for IRQ/power/reset) */
-+#define VDPU_IRQ_STATUS    0x0004
-+#define VDPU_IRQ_CLEAR     0x0008
-+#define VDPU_IRQ_MASK      0x000C
-+#define VDPU_POWER_CTRL    0x0010
-+#define VDPU_SOFT_RESET     0x0014
++/* VDPU383 (RK3588) hardware info */
++#define RKVDEC2_REG_NUM         360
++#define RKVDEC2_REG_END         359
++#define RKVDEC2_REG_EN          16
++#define RKVDEC2_REG_FMT         8
++#define RKVDEC2_REG_RET_STATUS  15
++#define RKVDEC2_MAX_WRITE_PART  6
 +
-+#define VDPU_SOFTRESET_EN       BIT(20)  /* from vendor: RKVDEC_SOFTRESET_EN */
-+#define VDPU_START_EN           BIT(0)   /* from vendor: RKVDEC_START_EN */
-+
++/* IRQ bits */
 +#define VDPU_IRQ_DEC_DONE   BIT(0)
 +#define VDPU_IRQ_DEC_ERROR  BIT(1)
 +#define VDPU_IRQ_BUS_ERROR  BIT(2)
@@ -382,21 +385,48 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +#define R(reg)    readl(regs + (reg))
 +#define W(reg,v)  writel(v, regs + (reg))
 +
-+int rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_frame_desc *desc)
++/* Per-frame task descriptor — the decode blob from userspace */
++struct rkvdec2_task {
++	u32 reg[RKVDEC2_REG_NUM];
++	struct { u32 offset; u32 size; } w_reqs[RKVDEC2_MAX_WRITE_PART];
++	u32 w_req_cnt;
++};
++
++int  rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_task *task);
++void rkvdec2_hw_irq_handler(void __iomem *regs, u32 *status);
++void rkvdec2_hw_power_on(void __iomem *regs);
++void rkvdec2_hw_power_off(void __iomem *regs);
++int  rkvdec2_hw_init(void __iomem *regs);
++
++#define RKVDEC2_MAX_WIDTH  7680
++#define RKVDEC2_MAX_HEIGHT 4320
++#endif
++
++int rkvdec2_hw_run(void __iomem *regs, struct rkvdec2_task *task)
 +{
-+	/* Phase 2b placeholder: replay userspace register blob, then start.
-+	 * The vendor mpp_rkvdec2_run() sequence:
-+	 *   1. Write cache config (CACHE*_SIZE_BASE)
-+	 *   2. Clear caches (CLR_CACHE*_BASE)
-+	 *   3. For each w_req: write task->reg[s..e] to hardware
-+	 *   4. Flush IOMMU TLB
-+	 *   5. wmb(); write START_EN = reg[reg_en] | START_EN
-+	 *
-+	 * Currently: synthetic completion via IRQ status.  Userspace MPP
-+	 * will send SET_REG_WRITE messages with pre-computed register blobs
-+	 * once the task->reg[] capture is wired in the ioctl dispatch. */
-+	W(VDPU_IRQ_CLEAR,  VDPU_IRQ_DEC_DONE);
-+	W(VDPU_IRQ_STATUS, VDPU_IRQ_DEC_DONE);
++	u32 i, reg_cache;
++
++	/* 1. Cache config — vendor default */
++	reg_cache = VDPU_CACHE_CACHEABLE | VDPU_CACHE_READ_ALLOC | VDPU_CACHE_LINE_64;
++	W(VDPU_CACHE0_SIZE, reg_cache);
++	W(VDPU_CACHE1_SIZE, reg_cache);
++	W(VDPU_CACHE2_SIZE, reg_cache);
++	W(VDPU_CLR_CACHE0, 1);
++	W(VDPU_CLR_CACHE1, 1);
++	W(VDPU_CLR_CACHE2, 1);
++
++	/* 2. Replay register blob from userspace */
++	for (i = 0; i < task->w_req_cnt; i++) {
++		u32 off = task->w_reqs[i].offset / sizeof(u32);
++		u32 end = off + task->w_reqs[i].size / sizeof(u32);
++		for (; off < end; off++)
++			W(off * sizeof(u32), task->reg[off]);
++	}
++
++	/* 3. wmb + START */
++	wmb();
++	W(VDPU_START_EN_BASE, task->reg[RKVDEC2_REG_EN] | VDPU_START_EN);
++
 +	return 0;
 +}
 +
