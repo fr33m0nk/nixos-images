@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,356 @@
+@@ -0,0 +1,360 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -78,7 +78,11 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	rkvdec2_hw_irq_handler(rdev->regs, &st);
 +	if (!st)
 +		return IRQ_NONE;
-+	dev_info(rdev->dev, "irq: hw status 0x%08x\n", st);
++	dev_info(rdev->dev, "irq: hw status 0x%08x %s%s%s%s\n", st,
++		(st & BIT(2)) ? "READY " : "",
++		(st & BIT(3)) ? "BUS " : "",
++		(st & BIT(4)) ? "ERROR " : "",
++		(st & BIT(5)) ? "TIMEOUT " : "");
 +	return IRQ_WAKE_THREAD;
 +}
 +
@@ -454,7 +458,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,224 @@
+@@ -0,0 +1,232 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL - replays the userspace-computed register blob
@@ -621,25 +625,33 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +		ret = rkvdec2_xlat_one(task, idx, 0);
 +		if (ret)
 +			return ret;
-+		/* valid-but-null address (e.g. scanlist with flat scaling):
-+		 * redirect to the scratch page so the hw speculative read
-+		 * doesn't fault iova 0. */
-+		if (task->reg[idx] == 0 && task->scratch_iova)
-+			task->reg[idx] = (u32)task->scratch_iova;
 +	}
 +
 +	/* SET_REG_ADDR_OFFSET adds a byte offset onto an already fd-translated
 +	 * address register (vendor mpp_translate_reg_offset_info). Only apply
 +	 * to registers that actually hold a buffer (skip unset 0 bases). */
++	if (task->off_inf.cnt)
++		pr_info("rkvdec2 off_inf cnt=%u\n", task->off_inf.cnt);
 +	for (i = 0; i < task->off_inf.cnt; i++) {
 +		u32 idx = task->off_inf.elem[i].index;
++		u32 off = task->off_inf.elem[i].offset;
 +		if (idx < RKVDEC2_REG_NUM && task->reg[idx])
-+			task->reg[idx] += task->off_inf.elem[i].offset;
++			task->reg[idx] += off;
++		pr_info("rkvdec2 off_inf[%u] idx=%u off=0x%x reg=%08x\n",
++			i, idx, off, idx < RKVDEC2_REG_NUM ? task->reg[idx] : 0);
 +	}
++
++	/* Any address register (128-199, the common_addr + h264d_addr
++	 * window) still 0 after translate+offsets → redirect to the
++	 * scratch page. Covers valid-but-null hw reads (scanlist),
++	 * "no_use" slots (reg160/162), and anything else zero. */
++	for (i = 128; i < 200; i++)
++		if (task->reg[i] == 0 && task->scratch_iova)
++			task->reg[i] = (u32)task->scratch_iova;
 +
 +	/* debug: dump translated address registers to locate bad iovas */
 +	for (i = 128; i < 200; i++)
-+		if (task->reg[i])
++		if (task->reg[i] && task->reg[i] != task->scratch_iova)
 +			pr_info("rkvdec2 xlat reg[%u]=%08x\n", i, task->reg[i]);
 +
 +	return 0;
