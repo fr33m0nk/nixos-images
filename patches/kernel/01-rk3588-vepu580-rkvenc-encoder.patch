@@ -4495,7 +4495,7 @@ diff -ruN aa/include/uapi/linux/rkvenc.h bb/include/uapi/linux/rkvenc.h
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	1970-01-01 00:00:00.000000000 +0000
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,52 @@
+@@ -0,0 +1,76 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/*
 + * Public API for external codec modules (rkvdec2) to register
@@ -4515,6 +4515,30 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.h bb/drivers/
 +#define _RKVENCSERVICE_API_H_
 +
 +#include <linux/platform_device.h>
++
++/* MPP message structures — shared between encoder and decoder.
++ * Both sides need to parse SET_REG_WRITE/READ/ADDR_OFFSET in the
++ * ioctl dispatch to capture register blobs from userspace. */
++struct mpp_request {
++	__u32 cmd;
++	__u32 flags;
++	__u32 size;
++	__u32 offset;
++	void __user *data;
++};
++
++#define MPP_CMD_SET_REG_WRITE    (0x100 + 0)
++#define MPP_CMD_SET_REG_READ     (0x100 + 1)
++#define MPP_CMD_SET_REG_ADDR_OFFSET (0x100 + 3)
++
++/* Minimal forward declaration matching the real rkvenc_task_msgs layout.
++ * Only req_cnt + reqs[] are at known offsets; pad the rest. */
++struct rkvenc_task_msgs {
++	u8 _pad[68];
++	u32 req_cnt;
++	u8 _pad2[16];
++	struct mpp_request reqs[1];
++};
 +
 +struct mpp_sub_dev;
 +struct rkvenc_service;
