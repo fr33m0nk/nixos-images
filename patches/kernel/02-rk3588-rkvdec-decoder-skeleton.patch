@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,302 @@
+@@ -0,0 +1,308 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -115,6 +115,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	struct mpp_request *reqs, *req;
 +	struct rkvdec2_task *task;
 +	u32 i, cnt;
++	int ret;
 +
 +	if (!rdev || !rdev->task_mgr)
 +		return -ENODEV;
@@ -138,12 +139,17 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +		switch (req->cmd) {
 +		case MPP_CMD_SET_REG_WRITE: {
 +			u32 off = req->offset / 4;
-+			u32 len = req->size;
-+			if (off + len/4 > RKVDEC2_REG_NUM ||
-+			    task->w_req_cnt >= RKVDEC2_MAX_WRITE_PART)
++			u32 words = req->size / 4 + (req->size & 3 ? 1 : 0);
++			if (off >= RKVDEC2_REG_NUM ||
++			    words > RKVDEC2_REG_NUM - off ||
++			    task->w_req_cnt >= RKVDEC2_MAX_WRITE_PART) {
++				ret = -EINVAL;
 +				goto err_free;
-+			if (copy_from_user(&task->reg[off], req->data, len))
++			}
++			if (copy_from_user(&task->reg[off], req->data, req->size)) {
++				ret = -EFAULT;
 +				goto err_free;
++			}
 +			task->w_reqs[task->w_req_cnt].offset = req->offset;
 +			task->w_reqs[task->w_req_cnt].size   = req->size;
 +			task->w_req_cnt++;
@@ -168,7 +174,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +
 +err_free:
 +	kfree(task);
-+	return -EFAULT;
++	return ret;
 +}
 +
 +static void rkvdec2_irq_cb(void *priv)
