@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,320 @@
+@@ -0,0 +1,326 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -74,6 +74,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	rkvdec2_hw_irq_handler(rdev->regs, &st);
 +	if (!st)
 +		return IRQ_NONE;
++	dev_info(rdev->dev, "irq: hw status 0x%08x\n", st);
 +	return IRQ_WAKE_THREAD;
 +}
 +
@@ -175,6 +176,11 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	ret = rkvdec2_translate_fd(task);
 +	if (ret)
 +		goto err_free;
++
++	dev_info(rdev->dev,
++		 "submit: reqs=%u writes=%u fds=%u fmt=%u reg128=0x%08x\n",
++		 cnt, task->w_req_cnt, task->fd_cnt,
++		 task->reg[RKVDEC2_REG_FMT] & 0x3ff, task->reg[128]);
 +
 +	/* Enqueue to pending — worker calls hw_run */
 +	ret = rkvdec2_task_submit(rdev->task_mgr, task);
@@ -418,7 +424,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,208 @@
+@@ -0,0 +1,210 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL - replays the userspace-computed register blob
@@ -493,6 +499,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +
 +	/* 3. Barrier, then kick the hardware */
 +	wmb();
++	pr_info("rkvdec2 hw_run: START reg[%u]=0x%08x w_req=%u\n",
++		RKVDEC2_REG_EN, task->reg[RKVDEC2_REG_EN], task->w_req_cnt);
 +	W(VDPU_START_EN_BASE, task->reg[RKVDEC2_REG_EN] | VDPU_START_EN);
 +
 +	return 0;
@@ -690,7 +698,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_service.c b/drivers/
 +	svc->core_id = core_id;
 +	svc->regs = regs;
 +
-+	dev_info(dev, "rkvdec2 service core-%u created (mpp deferred)\n", core_id);
++	dev_info(dev, "rkvdec2 service core-%u created\n", core_id);
 +	return svc;
 +}
 +
@@ -932,7 +940,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/med
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,115 @@
+@@ -0,0 +1,117 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Task / job queue manager for VDPU381 decode.
@@ -1002,6 +1010,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +		int result = task->status;
 +		if (result == 1) continue;
 +
++		dev_info(tm->dev, "task %u complete, status %d\n",
++			 task->task_id, result);
 +		list_del(&task->node);
 +		spin_unlock_irqrestore(&tm->lock, flags);
 +		rkvdec2_service_signal(tm->svc, result >= 0 ? 0 : result);
