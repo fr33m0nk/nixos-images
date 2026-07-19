@@ -2803,7 +2803,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1290 @@
+@@ -0,0 +1,1296 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -3801,7 +3801,13 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +
 +	/* Phase 3: If we have POLL requests, wait for result */
 +	if (msgs.poll_cnt) {
-+		ret = rkvenc_wait_result(session, &msgs);
++		/* Decode sessions: stub HAL completed synchronously in
++		 * Phase 2 — nothing to wait for.  Real async completion
++		 * wiring happens in Layer 3b proper. */
++		if (session->device_type == MPP_DEVICE_RKVDEC)
++			ret = 0;
++		else
++			ret = rkvenc_wait_result(session, &msgs);
 +		if (ret)
 +			rkvenc_err("wait result ret %d\n", ret);
 +	}
