@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,324 @@
+@@ -0,0 +1,319 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -177,14 +177,9 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +		goto err_free;
 +
 +	/* Enqueue to pending — worker calls hw_run */
-+	{
-+		struct rkvdec2_task_mgr *tm = rdev->task_mgr;
-+		unsigned long flags;
-+		spin_lock_irqsave(&tm->lock, flags);
-+		list_add_tail(&task->node, &tm->pending);
-+		spin_unlock_irqrestore(&tm->lock, flags);
-+		schedule_work(&tm->work);
-+	}
++	ret = rkvdec2_task_submit(rdev->task_mgr, task);
++	if (ret)
++		goto err_free;
 +	return 0;
 +
 +err_free:
@@ -876,7 +871,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_iommu.c b/drivers/me
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,55 @@
+@@ -0,0 +1,56 @@
 +/* SPDX-License-Identifier: GPL-2.0-only */
 +/* Task / job queue manager.  Copyright (C) 2026 fr33m0nk */
 +#ifndef _RKVDEC2_TASK_H_
@@ -930,12 +925,13 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/med
 +/* Threaded IRQ bottom-half: dequeues completed jobs, signals the
 + * service, and starts the next pending decode. */
 +void rkvdec2_task_irq_thread(struct rkvdec2_task_mgr *tm);
++int  rkvdec2_task_submit(struct rkvdec2_task_mgr *tm, struct rkvdec2_task *task);
 +
 +#endif
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,104 @@
+@@ -0,0 +1,115 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Task / job queue manager for VDPU381 decode.
@@ -1039,4 +1035,15 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +{
 +	cancel_work_sync(&tm->work);
 +	kfree(tm);
++}
++
++int rkvdec2_task_submit(struct rkvdec2_task_mgr *tm, struct rkvdec2_task *task)
++{
++	unsigned long flags;
++
++	spin_lock_irqsave(&tm->lock, flags);
++	list_add_tail(&task->node, &tm->pending);
++	spin_unlock_irqrestore(&tm->lock, flags);
++	schedule_work(&tm->work);
++	return 0;
 +}
