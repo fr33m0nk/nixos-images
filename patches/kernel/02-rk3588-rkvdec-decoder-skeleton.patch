@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,316 @@
+@@ -0,0 +1,321 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -158,7 +158,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +		case MPP_CMD_SET_REG_ADDR_OFFSET:
 +			/* Capture offset info for later fd→iova translation.
 +			 * Format: each elem in data is {index, offset}. */
-+			if (req->size <= sizeof(task->off_inf.elem) *
++			if (req->size <= sizeof(task->off_inf.elem[0]) *
 +			    (ARRAY_SIZE(task->off_inf.elem) - task->off_inf.cnt))
 +				if (copy_from_user(
 +					&task->off_inf.elem[task->off_inf.cnt],
@@ -168,6 +168,11 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +			break;
 +		}
 +	}
++
++	/* Resolve fd placeholders in address registers to iovas */
++	ret = rkvdec2_translate_fd(task);
++	if (ret)
++		goto err_free;
 +
 +	/* Enqueue to pending — worker calls hw_run */
 +	{
@@ -414,7 +419,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,199 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL - replays the userspace-computed register blob
@@ -425,6 +430,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +#include <linux/bits.h>
 +#include <linux/delay.h>
 +#include <linux/printk.h>
++#include <linux/kernel.h>
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_task.h"
 +
@@ -455,6 +461,9 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +#define VDPU_IRQ_DEC_ERROR  BIT(1)
 +#define VDPU_IRQ_BUS_ERROR  BIT(2)
 +#define VDPU_IRQ_TIMEOUT    BIT(3)
++
++/* Codec format field in reg[RKVDEC2_REG_FMT] (vendor RKVDEC_GET_FORMAT). */
++#define VDPU_GET_FORMAT(x)  ((x) & 0x3ff)
 +
 +#define R(reg)    readl(regs + (reg))
 +#define W(reg,v)  writel(v, regs + (reg))
@@ -489,60 +498,90 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +	return 0;
 +}
 +
-+/* H.264 translate table: register indices that carry fd+offset pairs.
-+ * From vendor mpp_rkvdec2.c: trans_tbl_h264d[].  Same indices also
-+ * serve HEVC and VP9 (they differ only in a few slots). */
++/* ---- fd -> iova translation ------------------------------------------ *
++ * Per-codec translate tables (vendor rkvdec_v2_trans, RK3588).  Each entry
++ * is a register index whose value encodes (offset << 10) | fd.            */
 +static const u16 trans_tbl_h264d[] = {
 +	128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
 +	161, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176,
 +	177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
 +	192, 193, 194, 195, 196, 197, 198, 199
 +};
++static const u16 trans_tbl_h265d[] = {
++	128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
++	161, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176,
++	177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
++	192, 193, 194, 195, 196, 197, 198, 199
++};
++static const u16 trans_tbl_vp9d[] = {
++	128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
++	160, 162, 164, 165, 166, 167, 168, 169, 170, 171, 172, 180, 181, 182, 183,
++	184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199
++};
++static const u16 trans_tbl_avs2d[] = {
++	128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142,
++	161, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176,
++	177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191,
++	192, 193, 194, 195, 196, 197, 198, 199
++};
++
++/* Hardware format field values (vendor RKVDEC_FMT_*). */
++enum {
++	RKVDEC_FMT_H265D = 0,
++	RKVDEC_FMT_H264D = 1,
++	RKVDEC_FMT_VP9D  = 2,
++	RKVDEC_FMT_AVS2  = 3,
++};
++
++static const struct { const u16 *tbl; u32 cnt; } rkvdec2_trans[] = {
++	[RKVDEC_FMT_H265D] = { trans_tbl_h265d, ARRAY_SIZE(trans_tbl_h265d) },
++	[RKVDEC_FMT_H264D] = { trans_tbl_h264d, ARRAY_SIZE(trans_tbl_h264d) },
++	[RKVDEC_FMT_VP9D]  = { trans_tbl_vp9d,  ARRAY_SIZE(trans_tbl_vp9d) },
++	[RKVDEC_FMT_AVS2]  = { trans_tbl_avs2d, ARRAY_SIZE(trans_tbl_avs2d) },
++};
++
++/* Replace one fd-encoded register value with its iova (if the fd is mapped).
++ * fixed_off != 0 overrides the offset encoded in the register value. */
++static void rkvdec2_xlat_one(struct rkvdec2_task *task, u32 idx, u32 fixed_off)
++{
++	u32 val = task->reg[idx];
++	int fd = val & 0x3ff;
++	u32 offset = fixed_off ?: (val >> 10);
++	u32 j;
++
++	if (fd == 0)
++		return;
++	for (j = 0; j < task->fd_cnt; j++) {
++		if (task->fds[j].fd == fd) {
++			task->reg[idx] = (u32)(task->fds[j].iova + offset);
++			return;
++		}
++	}
++}
 +
 +int rkvdec2_translate_fd(struct rkvdec2_task *task)
 +{
-+	u32 fmt, i;
-+	const u16 *tbl = trans_tbl_h264d;
-+	u32 cnt = ARRAY_SIZE(trans_tbl_h264d);
++	u32 fmt = VDPU_GET_FORMAT(task->reg[RKVDEC2_REG_FMT]);
++	const u16 *tbl;
++	u32 cnt, i;
 +
-+	/* Determine codec from format register (vendor: RKVDEC_GET_FORMAT) */
-+	fmt = task->reg[RKVDEC2_REG_FMT] & 0x3ff;
-+	/* All supported codecs share the same base translate table */
-+
-+	/* Walk the translate table: each entry is a register index
-+	 * whose value encodes (offset << 10) | fd.  Replace with iova. */
-+	for (i = 0; i < cnt; i++) {
-+		u32 idx = tbl[i];
-+		u32 val = task->reg[idx];
-+		int fd = val & 0x3ff;
-+		u32 offset = val >> 10;
-+		u32 j;
-+
-+		if (fd == 0)
-+			continue;
-+
-+		/* Linear search in fd→iova map */
-+		for (j = 0; j < task->fd_cnt; j++) {
-+			if (task->fds[j].fd == fd) {
-+				task->reg[idx] = (u32)(task->fds[j].iova + offset);
-+				break;
-+			}
-+		}
++	if (fmt >= ARRAY_SIZE(rkvdec2_trans) || !rkvdec2_trans[fmt].tbl) {
++		pr_err("rkvdec2: unsupported hw format %u\n", fmt);
++		return -EINVAL;
 +	}
++	tbl = rkvdec2_trans[fmt].tbl;
++	cnt = rkvdec2_trans[fmt].cnt;
 +
-+	/* Also walk custom offset-info slots from SET_REG_ADDR_OFFSET */
++	/* Codec table: indices are hardware-fixed (<= 199); guard anyway. */
++	for (i = 0; i < cnt; i++)
++		if (tbl[i] < RKVDEC2_REG_NUM)
++			rkvdec2_xlat_one(task, tbl[i], 0);
++
++	/* Custom slots from SET_REG_ADDR_OFFSET carry userspace indices. */
 +	for (i = 0; i < task->off_inf.cnt; i++) {
 +		u32 idx = task->off_inf.elem[i].index;
-+		u32 val = task->reg[idx];
-+		int fd = val & 0x3ff;
-+		u32 offset = task->off_inf.elem[i].offset ?: (val >> 10);
-+		u32 j;
-+		for (j = 0; j < task->fd_cnt; j++) {
-+			if (task->fds[j].fd == fd) {
-+				task->reg[idx] = (u32)(task->fds[j].iova + offset);
-+				break;
-+			}
-+		}
++		if (idx < RKVDEC2_REG_NUM)
++			rkvdec2_xlat_one(task, idx, task->off_inf.elem[i].offset);
 +	}
 +
 +	return 0;
