@@ -66,6 +66,14 @@
     # CSG suspend timeout panics.  udev fires when devfreq appears.
     udev.extraRules = ''
       SUBSYSTEM=="devfreq", KERNEL=="fb000000.gpu", ATTR{max_freq}="800000000"
+
+      # Rockchip MPP / VPU device access for the `video` group, so rootless MPP
+      # (mpi_dec_test, ffmpeg-rockchip, a Jellyfin container) can use the codec
+      # hardware without root. The `render` node covers OpenCL tonemap / RGA.
+      KERNEL=="mpp_service", GROUP="video", MODE="0660"
+      KERNEL=="rga", GROUP="video", MODE="0660"
+      SUBSYSTEM=="dma_heap", KERNEL=="system", GROUP="video", MODE="0660"
+      KERNEL=="renderD128", GROUP="render", MODE="0660"
     '';
 
     usb-rndis.enable = lib.mkDefault true;

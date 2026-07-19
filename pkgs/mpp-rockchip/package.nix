@@ -103,6 +103,18 @@ gcc13Stdenv.mkDerivation (finalAttrs: {
       done
       patchelf --set-rpath "$new" "$f" 2>/dev/null || true
     done
+
+    # The DECODERS live in libmpp_ext.so, which nothing links by default — so
+    # decode fails until it is loaded. Make the tools DT_NEEDED it (resolved via
+    # their $out/lib rpath, which DT_NEEDED honors) so they auto-load it at
+    # startup — no LD_PRELOAD required.
+    ext="$(find $out/lib -type f -name 'libmpp_ext.so*' | head -1)"
+    if [ -n "$ext" ]; then
+      soname="$(patchelf --print-soname "$ext" 2>/dev/null || basename "$ext")"
+      for t in $out/bin/*; do
+        patchelf --add-needed "$soname" "$t" 2>/dev/null || true
+      done
+    fi
   '';
 
   meta = {
