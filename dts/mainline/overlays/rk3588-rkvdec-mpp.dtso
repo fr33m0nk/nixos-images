@@ -24,9 +24,12 @@
 	compatible = "rockchip,rk3588";
 };
 
-/* Disable mainline stateless rkvdec driver */
+/* Disable the mainline stateless rkvdec DRIVER, but keep its IOMMU
+ * (vdec0_mmu) enabled — our rkvdec2 device reuses it for DMA.  The MMU
+ * is a standalone platform device and probes regardless of whether its
+ * master (vdec0) is enabled. */
 &vdec0   { status = "disabled"; };
-&vdec0_mmu { status = "disabled"; };
+&vdec0_mmu { status = "okay"; };
 
 &{/} {
 	#address-cells = <2>;
@@ -72,24 +75,12 @@
 		reset-names = "axi", "ahb", "cabac", "core", "hevc_cabac";
 		rockchip,sram = <&vdec0_sram>;
 		rockchip,rcb-iova = <0xffb00000 0x100000>;
-		iommus = <&rkvdec0_mmu>;
+		iommus = <&vdec0_mmu>;
 		rockchip,srv = <&mpp_srv>;
 		rockchip,ccu = <&rkvdec_ccu>;
 		rockchip,taskqueue-node = <0>;
 		rockchip,resetgroup-node = <0>;
 		rockchip,task-capacity = <4>;
-		power-domains = <&power 14>;
-	};
-
-	/* IOMMU at same address as vdec0_mmu */
-	rkvdec0_mmu: iommu@fdc38700 {
-		compatible = "rockchip,rk3588-iommu", "rockchip,rk3568-iommu";
-		reg = <0x0 0xfdc38700 0x0 0x40>, <0x0 0xfdc38740 0x0 0x40>;
-		interrupts = <0x0 96 0x4 0x0>;
-		clocks = <&cru 385>, <&cru 384>;
-		clock-names = "aclk", "iface";
-		rockchip,disable-mmu-reset;
-		#iommu-cells = <0>;
 		power-domains = <&power 14>;
 	};
 };
