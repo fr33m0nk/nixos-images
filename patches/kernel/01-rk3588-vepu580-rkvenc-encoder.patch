@@ -2803,7 +2803,7 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_iommu.c bb/drivers/me
 diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c
 --- aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	1969-12-31 16:00:00
 +++ bb/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c	2026-02-09 17:54:57
-@@ -0,0 +1,1312 @@
+@@ -0,0 +1,1314 @@
 +// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
 +/*
 + * Rockchip VEPU580 encoder driver - MPP service char device and ioctl dispatch
@@ -3498,9 +3498,11 @@ diff -ruN aa/drivers/media/platform/rockchip/rkvenc/rkvenc_service.c bb/drivers/
 +		struct rkvenc_dev *mpp = session->mpp;
 +		u32 val = mpp ? mpp->hw_info->hw.hw_id : 0;
 +
-+		/* For decode sessions, return VDPU381 hw_id placeholder */
++		/* Decode sessions: report the real RK3588 VDPU381 version so
++		 * MPP matches HWID_VDPU38X and picks its indexed vdpu34x HAL
++		 * (not the default packed rkvdpu HAL). */
 +		if (session->device_type == MPP_DEVICE_RKVDEC)
-+			val = 0x56445055; /* "VDPU" in little-endian */
++			val = 0x53813f05; /* HWID_VDPU38X */
 +
 +		if (put_user(val, (u32 __user *)req->data))
 +			return -EFAULT;

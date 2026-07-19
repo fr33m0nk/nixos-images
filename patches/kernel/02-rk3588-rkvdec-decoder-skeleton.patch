@@ -641,8 +641,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +	W(VDPU_SOFT_RESET, 1); udelay(10);
 +	W(VDPU_SOFT_RESET, 0); udelay(10);
 +	W(VDPU_IRQ_CLEAR, 0xffffffff);
-+	ver = R(0x0000) & 0xffff;
-+	pr_info("rkvdec2: VDPU381 core version %04x\n", ver);
++	ver = R(0x0000);
++	pr_info("rkvdec2: VDPU381 hw_id %08x\n", ver);
 +	return 0;
 +}
 +
