@@ -436,7 +436,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,210 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL - replays the userspace-computed register blob
@@ -584,18 +584,14 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +	u32 fmt = VDPU_GET_FORMAT(task->reg[RKVDEC2_REG_FMT]);
 +	const u16 *tbl;
 +	u32 cnt, i;
++	int ret;
 +
-+	/* tsukumijima MPP encodes the codec type differently from the
-+	 * BSP-kernel RKVDEC_FMT_* enum.  All supported codecs (H.264,
-+	 * HEVC, VP9) share the same fd→iova translate table, so just
-+	 * validate the format index and fall back to H.264 for unknown. */
-+	if (fmt < ARRAY_SIZE(rkvdec2_trans) && rkvdec2_trans[fmt].tbl) {
-+		tbl = rkvdec2_trans[fmt].tbl;
-+		cnt = rkvdec2_trans[fmt].cnt;
-+	} else {
-+		tbl = rkvdec2_trans[0].tbl;
-+		cnt = rkvdec2_trans[0].cnt;
++	if (fmt >= ARRAY_SIZE(rkvdec2_trans) || !rkvdec2_trans[fmt].tbl) {
++		pr_err("rkvdec2: unsupported hw format %u\n", fmt);
++		return -EINVAL;
 +	}
++	tbl = rkvdec2_trans[fmt].tbl;
++	cnt = rkvdec2_trans[fmt].cnt;
 +
 +	/* Codec table: indices are hardware-fixed (<= 199); guard anyway. */
 +	for (i = 0; i < cnt; i++) {
