@@ -477,7 +477,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,231 @@
+@@ -0,0 +1,237 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL - replays the userspace-computed register blob
@@ -533,7 +533,13 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +{
 +	u32 i, reg_cache;
 +
-+	/* 1. Cache config - vendor default */
++	/* 1. Soft reset the decode pipeline (vendor rkvdec2_run preamble) */
++	W(VDPU_SOFT_RESET, VDPU_SOFTRESET_EN);
++	udelay(5);
++	W(VDPU_SOFT_RESET, 0);
++	udelay(5);
++
++	/* 3. Cache config - vendor default */
 +	reg_cache = VDPU_CACHE_CACHEABLE | VDPU_CACHE_READ_ALLOC | VDPU_CACHE_LINE_64;
 +	W(VDPU_CACHE0_SIZE, reg_cache);
 +	W(VDPU_CACHE1_SIZE, reg_cache);
@@ -542,7 +548,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +	W(VDPU_CLR_CACHE1, 1);
 +	W(VDPU_CLR_CACHE2, 1);
 +
-+	/* 2. Replay register blob captured from userspace (SET_REG_WRITE) */
++	/* 4. Replay register blob captured from userspace (SET_REG_WRITE) */
 +	for (i = 0; i < task->w_req_cnt; i++) {
 +		u32 off = task->w_reqs[i].offset / sizeof(u32);
 +		u32 end = off + task->w_reqs[i].size / sizeof(u32);
@@ -552,7 +558,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +			W(off * sizeof(u32), task->reg[off]);
 +	}
 +
-+	/* 3. Barrier, then kick the hardware */
++	/* 5. Barrier, then kick the hardware */
 +	wmb();
 +	pr_info("rkvdec2 hw_run: START reg[%u]=0x%08x w_req=%u\n",
 +		RKVDEC2_REG_EN, task->reg[RKVDEC2_REG_EN], task->w_req_cnt);
