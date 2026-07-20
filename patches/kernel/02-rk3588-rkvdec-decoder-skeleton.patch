@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,362 @@
+@@ -0,0 +1,377 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -51,6 +51,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +#include <linux/reset.h>
 +#include <linux/dma-mapping.h>
 +#include <linux/sizes.h>
++#include <linux/iommu.h>
++#include <linux/mm.h>
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_service.h"
 +#include "rkvdec2_task.h"
@@ -68,6 +70,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	u32 core_id;
 +	void *scratch_cpu;         /* fallback page for valid-but-null addrs */
 +	dma_addr_t scratch_dma;
++	struct page *zero_page;    /* diag: page mapped at iova 0 for MMU probe */
 +};
 +
 +static irqreturn_t rkvdec2_irq(int irq, void *data)
@@ -306,6 +309,18 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +					       GFP_KERNEL);
 +	if (!rdev->scratch_cpu)
 +		return -ENOMEM;
++
++	/* Diagnostic: map a zero page at IOVA 0.  If the VDPU381's
++	 * internal MMU page-table base defaults to 0, its first table
++	 * walk hits physical address 0 -> IOMMU fault at iova 0.
++	 * Giving it a valid page at 0 proves or disproves the theory. */
++	{
++		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
++		rdev->zero_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
++		if (rdev->zero_page && dom)
++			iommu_map(dom, 0, page_to_phys(rdev->zero_page),
++				  PAGE_SIZE, IOMMU_READ | IOMMU_CACHE);
++	}
 +
 +	rdev->service = rkvdec2_service_create(dev, rdev->core_id, rdev->regs);
 +	if (IS_ERR(rdev->service)) {
