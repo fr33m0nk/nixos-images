@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,378 @@
+@@ -0,0 +1,379 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -310,16 +310,17 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	if (!rdev->scratch_cpu)
 +		return -ENOMEM;
 +
-+	/* Diagnostic: map a zero page at IOVA 0.  If the VDPU381's
-+	 * internal MMU page-table base defaults to 0, its first table
-+	 * walk hits physical address 0 -> IOMMU fault at iova 0.
-+	 * Giving it a valid page at 0 proves or disproves the theory. */
++	/* The VDPU381 has an internal MMU whose page-table base
++	 * defaults to 0.  Until we find the register to disable or
++	 * reprogram it, give the walker a 64K zero region at IOVA
++	 * 0 so it can walk its page table without faulting.
++	 * TODO: find VDPU381_REG_MMU_BYPASS / DTE_BASE register. */
 +	{
 +		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
-+		rdev->zero_page = alloc_page(GFP_KERNEL | __GFP_ZERO);
++		rdev->zero_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, 4); /* 64K */
 +		if (rdev->zero_page && dom)
 +			iommu_map(dom, 0, page_to_phys(rdev->zero_page),
-+				  PAGE_SIZE, IOMMU_READ | IOMMU_CACHE,
++				  SZ_64K, IOMMU_READ | IOMMU_CACHE,
 +				  GFP_KERNEL);
 +	}
 +
