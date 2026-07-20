@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,360 @@
+@@ -0,0 +1,362 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -146,6 +146,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	 * into task->reg[], record each in w_reqs[] for hw_run. */
 +	for (i = 0; i < cnt; i++) {
 +		req = &reqs[i];
++		dev_info(rdev->dev, "  msg[%u] cmd=0x%x size=%u off=0x%x\n",
++			 i, req->cmd, req->size, req->offset);
 +		if (!req->size)
 +			continue;
 +		switch (req->cmd) {
@@ -458,7 +460,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.h b/drivers/media
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,232 @@
+@@ -0,0 +1,231 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 decode HAL - replays the userspace-computed register blob
@@ -641,18 +643,17 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +			i, idx, off, idx < RKVDEC2_REG_NUM ? task->reg[idx] : 0);
 +	}
 +
-+	/* Any address register (128-199, the common_addr + h264d_addr
-+	 * window) still 0 after translate+offsets → redirect to the
-+	 * scratch page. Covers valid-but-null hw reads (scanlist),
-+	 * "no_use" slots (reg160/162), and anything else zero. */
-+	for (i = 128; i < 200; i++)
++	/* Any register still 0 after translate+offsets → redirect to
++	 * the scratch page. The hardware may speculatively read any
++	 * address-like register; a single zero is enough to fault. */
++	for (i = 0; i < RKVDEC2_REG_NUM; i++)
 +		if (task->reg[i] == 0 && task->scratch_iova)
 +			task->reg[i] = (u32)task->scratch_iova;
 +
-+	/* debug: dump translated address registers to locate bad iovas */
-+	for (i = 128; i < 200; i++)
++	/* debug: dump all non-zero, non-scratch registers */
++	for (i = 0; i < RKVDEC2_REG_NUM; i++)
 +		if (task->reg[i] && task->reg[i] != task->scratch_iova)
-+			pr_info("rkvdec2 xlat reg[%u]=%08x\n", i, task->reg[i]);
++			pr_info("rkvdec2 reg[%u]=%08x\n", i, task->reg[i]);
 +
 +	return 0;
 +}
