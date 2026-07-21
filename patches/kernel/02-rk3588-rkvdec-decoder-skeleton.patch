@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,421 @@
+@@ -0,0 +1,401 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -53,8 +53,6 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +#include <linux/sizes.h>
 +#include <linux/iommu.h>
 +#include <linux/mm.h>
-+#include <linux/io.h>
-+#include <linux/delay.h>
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_service.h"
 +#include "rkvdec2_task.h"
@@ -345,24 +343,6 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +			}
 +		}
 +		dev_info(dev, "rkvdec2: mapped %d zero pages at iova 0\n", n);
-+	}
-+
-+	/* Reset the rkvdec0_mmu IOMMU state machine: disable paging,
-+	 * then re-enable.  The BSP's rockchip_iommu_disable/enable
-+	 * cycle stops the unbounded page-table walker.  Write the
-+	 * RK_MMU_CMD_DISABLE_PAGING (1) then ENABLE_PAGING (0) to
-+	 * the IOMMU command register at offset 0x08. */
-+	{
-+		void __iomem *mmu = ioremap(0xfdc38700, 0x40);
-+		if (mmu) {
-+			writel(1, mmu + 0x08);
-+			udelay(10);
-+			writel(0, mmu + 0x08);
-+			iounmap(mmu);
-+			dev_info(dev, "rkvdec2: rkvdec0_mmu paging reset\n");
-+		} else {
-+			dev_warn(dev, "rkvdec2: ioremap rkvdec0_mmu failed\n");
-+		}
 +	}
 +
 +	rdev->service = rkvdec2_service_create(dev, rdev->core_id, rdev->regs);

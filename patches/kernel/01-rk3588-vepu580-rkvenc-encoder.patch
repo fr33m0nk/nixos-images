@@ -9,6 +9,19 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  #include "iommu-pages.h"
  
  /** MMU register offsets */
+@@ -1040,4 +1040,12 @@ static int rk_iommu_attach_device(struct iommu_domain *domain,
+ 	pm_runtime_put(iommu->dev);
+
++	/* Reset MMU state to stop any stale page-table walks.
++	 * The VDPU381 decoder generates an unbounded walk from
++	 * IOVA 0 at startup — equivalent to the BSP kernel's
++	 * rockchip_iommu_disable/enable in mpp_iommu_refresh. */
++	writel(1, iommu->bases[0] + 0x08);
++	udelay(10);
++	writel(0, iommu->bases[0] + 0x08);
++
+ 	return ret;
+ }
 @@ -1182,6 +1183,7 @@
  	.probe_device = rk_iommu_probe_device,
  	.release_device = rk_iommu_release_device,
