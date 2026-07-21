@@ -688,10 +688,10 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_hw.c b/drivers/media
 +			i, idx, off, idx < RKVDEC2_REG_NUM ? task->reg[idx] : 0);
 +	}
 +
-+	/* Any register still 0 after translate+offsets → redirect to
-+	 * the scratch page. The hardware may speculatively read any
-+	 * address-like register; a single zero is enough to fault. */
-+	for (i = 0; i < RKVDEC2_REG_NUM; i++)
++	/* Address registers (128-199, common_addr + h264d_addr) still
++	 * 0 after translate+offsets → redirect to scratch. Only the
++	 * address window — config regs must NOT receive scratch_iova. */
++	for (i = 128; i < 200; i++)
 +		if (task->reg[i] == 0 && task->scratch_iova)
 +			task->reg[i] = (u32)task->scratch_iova;
 +
