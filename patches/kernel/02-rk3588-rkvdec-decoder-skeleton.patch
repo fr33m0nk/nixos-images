@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,391 @@
+@@ -0,0 +1,401 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -70,7 +70,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	u32 core_id;
 +	void *scratch_cpu;         /* fallback page for valid-but-null addrs */
 +	dma_addr_t scratch_dma;
-+	struct page *zero_page;    /* diag: page mapped at iova 0 for MMU probe */
++	struct page *zero_pages[512]; /* diag: pages at iova 0 for MMU probe */
 +};
 +
 +static irqreturn_t rkvdec2_irq(int irq, void *data)
@@ -321,18 +321,28 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	if (!rdev->scratch_cpu)
 +		return -ENOMEM;
 +
-+	/* The VDPU381 has an internal MMU whose page-table base
-+	 * defaults to 0.  Until we find the register to disable or
-+	 * reprogram it, give the walker a 64K zero region at IOVA
-+	 * 0 so it can walk its page table without faulting.
-+	 * TODO: find VDPU381_REG_MMU_BYPASS / DTE_BASE register. */
++	/* The VDPU381's internal MMU walks a page table starting
++	 * from physical address 0 (DTE base defaults to 0).  Until
++	 * the bypass register is found, map zero pages at IOVA 0
++	 * one at a time — handles fragmentation, no huge-order alloc. */
 +	{
 +		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
-+		rdev->zero_page = alloc_pages(GFP_KERNEL | __GFP_ZERO, 4); /* 64K */
-+		if (rdev->zero_page && dom)
-+			iommu_map(dom, 0, page_to_phys(rdev->zero_page),
-+				  SZ_64K, IOMMU_READ | IOMMU_CACHE,
-+				  GFP_KERNEL);
++		int n = 0;
++		if (dom) {
++			for (; n < 512; n++) {
++				struct page *p =
++					alloc_page(GFP_KERNEL | __GFP_ZERO);
++				if (!p)
++					break;
++				if (iommu_map(dom, n * PAGE_SIZE,
++					      page_to_phys(p), PAGE_SIZE,
++					      IOMMU_READ | IOMMU_CACHE,
++					      GFP_KERNEL))
++					break;
++				rdev->zero_pages[n] = p;
++			}
++		}
++		dev_info(dev, "rkvdec2: mapped %d zero pages at iova 0\n", n);
 +	}
 +
 +	rdev->service = rkvdec2_service_create(dev, rdev->core_id, rdev->regs);
