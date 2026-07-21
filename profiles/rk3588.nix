@@ -55,14 +55,6 @@
     kernelPackages = lib.mkDefault (pkgs.linuxPackagesFor pkgs.linux_rockchip64_7_1);
     kernelParams = [
       "net.ifnames=0"
-      # The VDPU381 decoder's internal MMU walks the IOMMU page table
-      # unbounded from IOVA 0 — a hardware behaviour that the BSP kernel
-      # stops via rockchip_iommu_disable/enable (not in mainline).  Run
-      # IOMMU in passthrough so the walker sees physical memory instead
-      # of faulting, and bump swiotlb so decode DMA buffers (1 MiB each)
-      # don't overflow the default 64 MiB bounce pool.
-      "iommu.passthrough=1"
-      "swiotlb=131072"
     ];
     initrd.allowMissingModules = !config.boot.kernelPackages.kernel.configfile.autoModules;
   };
