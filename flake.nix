@@ -6,7 +6,7 @@
     ];
     extra-trusted-public-keys = [
       "cache.qbisi.cc-1:xEChzP5k8fj+7wajY+e9IDORRTGMhViP5NaqMShGGjQ="
-      "fr33m0nk.cachix.org-1:242Y5El6BIU2qbK/6MKJLPDdfHYRu/JVgrcVVkwERDw="
+      "fr33m0nk.cachix.org-1:R6AOtQSRsnVlUAasYvjguJ1cGzwHvBjJKHWSw8n1Xb8="
     ];
   };
 
