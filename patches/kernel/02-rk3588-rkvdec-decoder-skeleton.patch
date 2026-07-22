@@ -330,10 +330,10 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
 +		struct page *zp = alloc_page(GFP_KERNEL | __GFP_ZERO);
 +		if (zp && dom) {
-+			iommu_map(dom, 0, page_to_phys(zp), SZ_256M,
++			iommu_map(dom, 0, page_to_phys(zp), SZ_1G,
 +				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
 +			rdev->zero_pages[0] = zp;
-+			dev_info(dev, "rkvdec2: mapped 256M zero at iova 0\n");
++			dev_info(dev, "rkvdec2: mapped 1G zero at iova 0\n");
 +		}
 +	}
 +
