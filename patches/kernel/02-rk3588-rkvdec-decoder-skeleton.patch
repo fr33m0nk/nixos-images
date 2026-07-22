@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,399 @@
+@@ -0,0 +1,393 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -321,26 +321,20 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	if (!rdev->scratch_cpu)
 +		return -ENOMEM;
 +
-+	/* The VDPU381 walks page-table entries upward from IOVA 0.
-+	 * Map 16384 (64 MiB) virtual pages to ONE shared zero physical
-+	 * page so the walker finds valid entries everywhere and the
-+	 * IOMMU never faults.  Every read returns zero; the walker
-+	 * completes and the decoder can start.  16K PTE entries cost
-+	 * ~16 IOMMU PTE pages — ~64 KiB overhead. */
++	/* The VDPU381 walks page-table entries upward from IOVA 0,
++	 * reading data from every mapped page.  Map the full IOMMU
++	 * aperture (256 MiB) to a single shared zero page so the
++	 * walker finds valid entries end-to-end.  The iommu_map call
++	 * splits the range into supported block sizes internally. */
 +	{
 +		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
 +		struct page *zp = alloc_page(GFP_KERNEL | __GFP_ZERO);
-+		int n = 0;
 +		if (zp && dom) {
-+			phys_addr_t zphys = page_to_phys(zp);
-+			for (n = 0; n < 16384; n++)
-+				if (iommu_map(dom, n * PAGE_SIZE, zphys,
-+					      PAGE_SIZE, IOMMU_READ | IOMMU_CACHE,
-+					      GFP_KERNEL))
-+					break;
++			iommu_map(dom, 0, page_to_phys(zp), SZ_256M,
++				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
 +			rdev->zero_pages[0] = zp;
++			dev_info(dev, "rkvdec2: mapped 256M zero at iova 0\n");
 +		}
-+		dev_info(dev, "rkvdec2: mapped %d zero pages at iova 0\n", n);
 +	}
 +
 +	rdev->service = rkvdec2_service_create(dev, rdev->core_id, rdev->regs);
