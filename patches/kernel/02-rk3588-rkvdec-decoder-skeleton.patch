@@ -1093,7 +1093,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/med
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,141 @@
+@@ -0,0 +1,150 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Task / job queue manager for VDPU381 decode.
@@ -1111,6 +1111,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_iommu.h"
 +#include <linux/iommu.h>
++#include <linux/io.h>
++#include <linux/delay.h>
 +
 +#define MAX_INFLIGHT 4	/* VDPU381 multi-slot decode pipeline */
 +
@@ -1148,6 +1150,13 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +		{
 +			struct iommu_domain *dom =
 +				iommu_get_domain_for_dev(tm->dev);
++			void __iomem *mmu = ioremap(0xfdc38700, 0x40);
++			if (mmu) {
++				writel(1, mmu + 0x08);
++				udelay(10);
++				writel(0, mmu + 0x08);
++				iounmap(mmu);
++			}
 +			if (dom)
 +				iommu_flush_iotlb_all(dom);
 +		}
