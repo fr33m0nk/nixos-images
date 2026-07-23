@@ -1141,8 +1141,17 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +		{
 +			struct iommu_domain *dom =
 +				iommu_get_domain_for_dev(tm->dev);
-+			if (dom)
++			if (dom) {
++				/* BSP-equivalent: detach/reattach
++				 * resets the MMU state machine by
++				 * calling rk_iommu_disable (clears
++				 * DTE, stops paging) then
++				 * rk_iommu_enable (re-programs
++				 * DTE, starts paging). */
++				iommu_detach_device(dom, tm->dev);
++				iommu_attach_device(dom, tm->dev);
 +				iommu_flush_iotlb_all(dom);
++			}
 +		}
 +		ret = rkvdec2_hw_run(tm->regs, task);
 +		if (ret) {
