@@ -1103,6 +1103,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +#include "rkvdec2_iommu.h"
 +#include <linux/iommu.h>
 +
++extern int rk_iommu_reset_paging(struct device *dev);
 +
 +#define MAX_INFLIGHT 4	/* VDPU381 multi-slot decode pipeline */
 +
