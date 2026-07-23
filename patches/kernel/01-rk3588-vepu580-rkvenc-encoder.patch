@@ -9,31 +9,6 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  #include "iommu-pages.h"
  
  /** MMU register offsets */
-@@ -1152,3 +1152,24 @@
- }
- EXPORT_SYMBOL(rockchip_iommu_disable);
- 
-+/**
-+ * rk_iommu_reset_paging — disable/re-enable paging on all MMU
-+ * units to stop any stale page-table walk (VDPU381).  Called by
-+ * external codec drivers before hardware start.  Equivalent to
-+ * the BSP's rockchip_iommu_disable/enable in mpp_iommu_refresh.
-+ */
-+int rk_iommu_reset_paging(struct device *dev)
-+{
-+	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
-+
-+	if (!iommu || !iommu->domain)
-+		return -ENODEV;
-+
-+	rk_iommu_disable_paging(iommu);
-+	udelay(10);
-+	rk_iommu_enable_paging(iommu);
-+
-+	return 0;
-+}
-+EXPORT_SYMBOL_GPL(rk_iommu_reset_paging);
-+
 @@ -1182,6 +1183,7 @@
  	.probe_device = rk_iommu_probe_device,
  	.release_device = rk_iommu_release_device,
