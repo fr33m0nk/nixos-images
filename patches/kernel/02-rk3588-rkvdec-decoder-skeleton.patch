@@ -329,10 +329,10 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
 +		struct page *zp = alloc_page(GFP_KERNEL | __GFP_ZERO);
 +		if (zp && dom) {
-+			iommu_map(dom, 0, page_to_phys(zp), SZ_1G,
++			iommu_map(dom, 0, page_to_phys(zp), SZ_4G,
 +				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
 +			rdev->zero_page = zp;
-+			dev_info(dev, "rkvdec2: mapped 1G zero at iova 0\n");
++			dev_info(dev, "rkvdec2: mapped 4G zero at iova 0\n");
 +		}
 +	}
 +
@@ -1102,8 +1102,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_iommu.h"
 +#include <linux/iommu.h>
-+
-+			/* Flush IOMMU TLB and reset paging state */
++#include <linux/io.h>
 +
 +#define MAX_INFLIGHT 4	/* VDPU381 multi-slot decode pipeline */
 +
@@ -1142,13 +1141,14 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +			struct iommu_domain *dom =
 +				iommu_get_domain_for_dev(tm->dev);
 +			if (dom) {
-+				/* BSP-equivalent: detach/reattach
-+				 * resets the MMU state machine by
-+				 * calling rk_iommu_disable (clears
-+				 * DTE, stops paging) then
-+				 * rk_iommu_enable (re-programs
-+				 * DTE, starts paging). */
 +				iommu_detach_device(dom, tm->dev);
++				/* Clear DTE on both MMUs so the
++				 * page-table base is invalidated.
++				 * Mainline rk_iommu_disable doesn't
++				 * do this; the BSP version does. */
++				{ void __iomem *m=ioremap(0xfdc38700,0x80);
++				  if(m){writel(0,m+0x00);writel(0,m+0x40);
++				  iounmap(m);} }
 +				iommu_attach_device(dom, tm->dev);
 +				iommu_flush_iotlb_all(dom);
 +			}
