@@ -1084,7 +1084,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.h b/drivers/med
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,148 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * Task / job queue manager for VDPU381 decode.
@@ -1102,7 +1102,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +#include "rkvdec2_hw.h"
 +#include "rkvdec2_iommu.h"
 +#include <linux/iommu.h>
-+#include <linux/io.h>
++
++extern int rk_iommu_reset_paging(struct device *dev);
 +
 +#define MAX_INFLIGHT 4	/* VDPU381 multi-slot decode pipeline */
 +
@@ -1140,18 +1141,13 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +		{
 +			struct iommu_domain *dom =
 +				iommu_get_domain_for_dev(tm->dev);
-+			if (dom) {
-+				iommu_detach_device(dom, tm->dev);
-+				/* Clear DTE on both MMUs so the
-+				 * page-table base is invalidated.
-+				 * Mainline rk_iommu_disable doesn't
-+				 * do this; the BSP version does. */
-+				{ void __iomem *m=ioremap(0xfdc38700,0x80);
-+				  if(m){writel(0,m+0x00);writel(0,m+0x40);
-+				  iounmap(m);} }
-+				iommu_attach_device(dom, tm->dev);
++			/* BSP-equivalent: full disable/enable paging
++			 * cycle on all MMU units, resets the IOMMU
++			 * state machine (calls driver's internal
++			 * disable_paging + enable_paging). */
++			rk_iommu_reset_paging(tm->dev);
++			if (dom)
 +				iommu_flush_iotlb_all(dom);
-+			}
 +		}
 +		ret = rkvdec2_hw_run(tm->regs, task);
 +		if (ret) {
