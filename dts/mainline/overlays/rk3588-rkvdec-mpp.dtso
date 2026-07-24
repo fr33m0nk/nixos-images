@@ -29,7 +29,10 @@
  * is a standalone platform device and probes regardless of whether its
  * master (vdec0) is enabled. */
 &vdec0   { status = "disabled"; };
-&vdec0_mmu { status = "okay"; };
+&vdec0_mmu {
+    status = "okay";
+    rockchip,master-handle-irq;
+};
 
 &{/} {
 	#address-cells = <2>;

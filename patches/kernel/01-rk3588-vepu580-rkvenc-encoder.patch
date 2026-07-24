@@ -17,6 +17,26 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  
  #define DTE_ADDR_DUMMY		0xCAFEBABE
 
+@@ -113,6 +113,11 @@
+ 	int num_irq;
+ 	struct clk_bulk_data *clocks;
+ 	int num_clocks;
++	bool skip_read;
++	bool dlr_disable;
++	bool cmd_retry;
++	bool master_handle_irq;
++	bool first_reset_disabled;
+ 	bool reset_disabled;
+ 	struct iommu_device iommu;
+ 	struct list_head node; /* entry in rk_iommu_domain.iommus */
+@@ -504,4 +504,4 @@
+ 	u32 dte_addr;
+ 	bool val;
+
+-	if (iommu->reset_disabled)
++	if (iommu->reset_disabled || iommu->first_reset_disabled)
+ 		return 0;
+
 @@ -933,6 +933,7 @@
  	struct rk_iommu_domain *rk_domain = to_rk_domain(domain);
  	int ret, i;
@@ -41,7 +61,33 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	.of_xlate = rk_iommu_of_xlate,
  	.default_domain_ops = &(const struct iommu_domain_ops) {
  		.attach_dev	= rk_iommu_attach_device,
-@@ -1384,4 +1384,14 @@
+@@ -1256,6 +1256,9 @@
+ 	iommu->reset_disabled = device_property_read_bool(dev,
+ 					"rockchip,disable-mmu-reset");
++	iommu->master_handle_irq = device_property_read_bool(dev,
++					"rockchip,master-handle-irq");
+
+ 	iommu->num_clocks = ARRAY_SIZE(rk_iommu_clocks);
+ 	iommu->clocks = devm_kcalloc(iommu->dev, iommu->num_clocks,
+@@ -624,7 +624,10 @@
+ 			 * and clear the page fault anyway.
+ 			 */
+-			if (iommu->domain != &rk_identity_domain)
+-				report_iommu_fault(iommu->domain, iommu->dev, iova,
+-						   flags);
+-			else
+-				dev_err(iommu->dev, "Page fault while iommu not attached to domain?\n");
++			if (iommu->domain != &rk_identity_domain) {
++				if (iommu->master_handle_irq)
++					report_iommu_fault(iommu->domain, iommu->dev, -1, 0x0);
++				else
++					report_iommu_fault(iommu->domain, iommu->dev, iova,
++							   flags);
++			} else {
++				dev_err(iommu->dev, "Page fault while iommu not attached to domain?\n");
++			}
+
+@@ -1384,4 +1384,40 @@
  		   .suppress_bind_attrs = true,
  	},
  };
@@ -55,6 +101,32 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
 +	return rk_iommu_enable(iommu);
 +}
 +EXPORT_SYMBOL_GPL(rk_iommu_reset_paging);
++
++void rockchip_iommu_mask_irq(struct device *dev)
++{
++	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
++	int i;
++
++	if (!iommu)
++		return;
++
++	for (i = 0; i < iommu->num_mmu; i++)
++		rk_iommu_write(iommu->bases[i], RK_MMU_INT_MASK, 0);
++}
++EXPORT_SYMBOL_GPL(rockchip_iommu_mask_irq);
++
++void rockchip_iommu_unmask_irq(struct device *dev)
++{
++	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
++	int i;
++
++	if (!iommu)
++		return;
++
++	for (i = 0; i < iommu->num_mmu; i++)
++		rk_iommu_write(iommu->bases[i], RK_MMU_INT_MASK, RK_MMU_IRQ_MASK);
++}
++EXPORT_SYMBOL_GPL(rockchip_iommu_unmask_irq);
  builtin_platform_driver(rk_iommu_driver);
 diff -ruN aa/drivers/media/platform/rockchip/Kconfig bb/drivers/media/platform/rockchip/Kconfig
 --- aa/drivers/media/platform/rockchip/Kconfig	2026-02-08 22:43:45
