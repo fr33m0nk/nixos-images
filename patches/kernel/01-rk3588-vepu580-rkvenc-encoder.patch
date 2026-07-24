@@ -29,7 +29,7 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	bool reset_disabled;
  	struct iommu_device iommu;
  	struct list_head node; /* entry in rk_iommu_domain.iommus */
-@@ -503,5 +503,5 @@
+@@ -501,5 +501,5 @@
  	int ret, i;
  	u32 dte_addr;
  	bool val;
