@@ -17,20 +17,6 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	.of_xlate = rk_iommu_of_xlate,
  	.default_domain_ops = &(const struct iommu_domain_ops) {
  		.attach_dev	= rk_iommu_attach_device,
-@@ -1256,1 +1256,12 @@
- builtin_platform_driver(rk_iommu_driver);
-+int rk_iommu_reset_paging(struct device *dev)
-+{
-+	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
-+
-+	if (!iommu || !iommu->domain)
-+		return -ENODEV;
-+	rk_iommu_disable_paging(iommu);
-+	udelay(10);
-+	rk_iommu_enable_paging(iommu);
-+	return 0;
-+}
-+EXPORT_SYMBOL_GPL(rk_iommu_reset_paging);
 diff -ruN aa/drivers/media/platform/rockchip/Kconfig bb/drivers/media/platform/rockchip/Kconfig
 --- aa/drivers/media/platform/rockchip/Kconfig	2026-02-08 22:43:45
 +++ bb/drivers/media/platform/rockchip/Kconfig	2026-02-07 01:43:23
