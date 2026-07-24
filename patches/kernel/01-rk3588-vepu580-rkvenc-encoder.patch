@@ -9,6 +9,14 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  #include "iommu-pages.h"
  
  /** MMU register offsets */
+@@ -41,6 +41,7 @@
+ #define RK_MMU_INT_MASK		0x1C	/* IRQ enable */
+ #define RK_MMU_INT_STATUS	0x20	/* IRQ status after masking */
+ #define RK_MMU_AUTO_GATING	0x24
++#define DISABLE_FETCH_DTE_TIME_LIMIT BIT(31)
+
+ #define DTE_ADDR_DUMMY		0xCAFEBABE
+
 @@ -1182,6 +1183,7 @@
  	.probe_device = rk_iommu_probe_device,
  	.release_device = rk_iommu_release_device,
@@ -17,6 +25,24 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	.of_xlate = rk_iommu_of_xlate,
  	.default_domain_ops = &(const struct iommu_domain_ops) {
  		.attach_dev	= rk_iommu_attach_device,
+@@ -933,6 +933,7 @@
+ 	struct rk_iommu_domain *rk_domain = to_rk_domain(domain);
+ 	int ret, i;
+
++	u32 auto_gate;
+ 	ret = clk_bulk_enable(iommu->num_clocks, iommu->clocks);
+ 	if (ret)
+ 		return ret;
+@@ -949,4 +949,9 @@
+ 		       rk_ops->mk_dtentries(rk_domain->dt_dma));
+ 		rk_iommu_base_command(iommu->bases[i], RK_MMU_CMD_ZAP_CACHE);
+ 		rk_iommu_write(iommu->bases[i], RK_MMU_INT_MASK, RK_MMU_IRQ_MASK);
++		auto_gate = rk_iommu_read(iommu->bases[i], RK_MMU_AUTO_GATING);
++		auto_gate |= DISABLE_FETCH_DTE_TIME_LIMIT;
++		rk_iommu_write(iommu->bases[i], RK_MMU_AUTO_GATING, auto_gate);
+ 	}
+
+ 	ret = rk_iommu_enable_paging(iommu);
 @@ -1384,4 +1384,14 @@
  		   .suppress_bind_attrs = true,
  	},
