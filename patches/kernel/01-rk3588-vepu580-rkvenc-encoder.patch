@@ -29,7 +29,7 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	bool reset_disabled;
  	struct iommu_device iommu;
  	struct list_head node; /* entry in rk_iommu_domain.iommus */
-@@ -501,5 +501,5 @@
+@@ -500,9 +500,9 @@
  	int ret, i;
  	u32 dte_addr;
  	bool val;
@@ -38,6 +38,8 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
 +	if (iommu->reset_disabled || iommu->first_reset_disabled)
  		return 0;
 
+ 	/*
+ 	 * Check if register DTE_ADDR is working
 @@ -933,6 +933,7 @@
  	struct rk_iommu_domain *rk_domain = to_rk_domain(domain);
  	int ret, i;
