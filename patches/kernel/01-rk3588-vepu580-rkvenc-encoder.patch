@@ -17,14 +17,6 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
 
  #define DTE_ADDR_DUMMY		0xCAFEBABE
 
-@@ -1182,6 +1183,7 @@
- 	.probe_device = rk_iommu_probe_device,
- 	.release_device = rk_iommu_release_device,
- 	.device_group = generic_single_device_group,
-+	.get_resv_regions = iommu_dma_get_resv_regions,
- 	.of_xlate = rk_iommu_of_xlate,
- 	.default_domain_ops = &(const struct iommu_domain_ops) {
- 		.attach_dev	= rk_iommu_attach_device,
 @@ -933,6 +933,7 @@
  	struct rk_iommu_domain *rk_domain = to_rk_domain(domain);
  	int ret, i;
@@ -43,6 +35,14 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	}
 
  	ret = rk_iommu_enable_paging(iommu);
+@@ -1182,6 +1183,7 @@
+ 	.probe_device = rk_iommu_probe_device,
+ 	.release_device = rk_iommu_release_device,
+ 	.device_group = generic_single_device_group,
++	.get_resv_regions = iommu_dma_get_resv_regions,
+ 	.of_xlate = rk_iommu_of_xlate,
+ 	.default_domain_ops = &(const struct iommu_domain_ops) {
+ 		.attach_dev	= rk_iommu_attach_device,
 @@ -1384,4 +1384,14 @@
  		   .suppress_bind_attrs = true,
  	},
