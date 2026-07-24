@@ -17,7 +17,7 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
  	.of_xlate = rk_iommu_of_xlate,
  	.default_domain_ops = &(const struct iommu_domain_ops) {
  		.attach_dev	= rk_iommu_attach_device,
-@@ -1384,4 +1384,19 @@
+@@ -1384,4 +1384,14 @@
  		   .suppress_bind_attrs = true,
  	},
  };
@@ -25,15 +25,10 @@ diff -ruN aa/drivers/iommu/rockchip-iommu.c bb/drivers/iommu/rockchip-iommu.c
 +int rk_iommu_reset_paging(struct device *dev)
 +{
 +	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
-+
 +	if (!iommu || !iommu->domain)
 +		return -ENODEV;
-+
-+	rk_iommu_disable_paging(iommu);
-+	udelay(10);
-+	rk_iommu_enable_paging(iommu);
-+
-+	return 0;
++	rk_iommu_disable(iommu);
++	return rk_iommu_enable(iommu);
 +}
 +EXPORT_SYMBOL_GPL(rk_iommu_reset_paging);
  builtin_platform_driver(rk_iommu_driver);

@@ -35,7 +35,7 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/Makefile b/drivers/media/pla
 diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c
 --- a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	1970-01-01 00:00:00.000000000 +0000
 +++ b/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c	2026-07-18 00:00:00.000000000 +0000
-@@ -0,0 +1,410 @@
+@@ -0,0 +1,376 @@
 +// SPDX-License-Identifier: GPL-2.0-only
 +/*
 + * VDPU381 MPP decoder — platform device probe/remove.
@@ -70,7 +70,6 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +	u32 core_id;
 +	void *scratch_cpu;         /* fallback page for valid-but-null addrs */
 +	dma_addr_t scratch_dma;
-+	struct page *zero_page;  /* shared page for IOVA 0-1G mapping */
 +};
 +
 +static irqreturn_t rkvdec2_irq(int irq, void *data)
@@ -320,39 +319,6 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_drv.c b/drivers/medi
 +					       GFP_KERNEL);
 +	if (!rdev->scratch_cpu)
 +		return -ENOMEM;
-+
-+	/* The VDPU381 walks page-table entries upward from IOVA 0,
-+	 * reading data from every mapped page.  Map the full 4 GiB
-+	 * IOMMU aperture (minus the reserved page at 0xFFFF0000) to
-+	 * a single shared zero page so the walker finds valid
-+	 * entries everywhere and completes without faulting. */
-+	{
-+		struct iommu_domain *dom = iommu_get_domain_for_dev(dev);
-+		struct page *zp = alloc_page(GFP_KERNEL | __GFP_ZERO);
-+		if (zp && dom) {
-+			int ret;
-+			rdev->zero_page = zp;
-+			ret = iommu_map(dom, 0, page_to_phys(zp), SZ_1G,
-+				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
-+			if (ret)
-+				dev_warn(dev, "rkvdec2: zero map 0G failed %d\n", ret);
-+			ret = iommu_map(dom, SZ_1G, page_to_phys(zp), SZ_1G,
-+				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
-+			if (ret)
-+				dev_warn(dev, "rkvdec2: zero map 1G failed %d\n", ret);
-+			ret = iommu_map(dom, 2ULL * SZ_1G, page_to_phys(zp), SZ_1G,
-+				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
-+			if (ret)
-+				dev_warn(dev, "rkvdec2: zero map 2G failed %d\n", ret);
-+			ret = iommu_map(dom, 3ULL * SZ_1G, page_to_phys(zp),
-+				  SZ_1G - SZ_64K,
-+				  IOMMU_READ | IOMMU_CACHE, GFP_KERNEL);
-+			if (ret)
-+				dev_warn(dev, "rkvdec2: zero map 3G failed %d\n", ret);
-+			if (!ret)
-+				dev_info(dev, "rkvdec2: mapped 4G zero aperture\n");
-+		}
-+	}
 +
 +	rdev->service = rkvdec2_service_create(dev, rdev->core_id, rdev->regs);
 +	if (IS_ERR(rdev->service)) {
