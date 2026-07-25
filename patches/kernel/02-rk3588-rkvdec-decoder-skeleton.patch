@@ -1123,10 +1123,8 @@ diff -ruN a/drivers/media/platform/rockchip/rkvdec2/rkvdec2_task.c b/drivers/med
 +		{
 +			struct iommu_domain *dom =
 +				iommu_get_domain_for_dev(tm->dev);
-+			if (dom) {
-+				iommu_detach_device(dom, tm->dev);
-+				iommu_attach_device(dom, tm->dev);
-+			}
++			if (dom)
++				iommu_flush_iotlb_all(dom);
 +		}
 +		ret = rkvdec2_hw_run(tm->regs, task);
 +		if (ret) {
