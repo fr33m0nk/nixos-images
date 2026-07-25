@@ -38,8 +38,6 @@ buildLinux {
     VIDEO_ROCKCHIP_RKVENC = module;
     # RKVDEC2 (VDPU381) H.264/HEVC/VP9 hardware decoder (MPP, /dev/mpp_service)
     VIDEO_ROCKCHIP_RKVDEC2 = module;
-    # IOMMU must be built-in for EXPORT_SYMBOL_GPL visibility to modules
-    ROCKCHIP_IOMMU = yes;
     # BTRFS built-in — needed by the disko VM on hosts where module loading
     # is restricted (e.g. Lima NixOS VMs).  Without this, mkfs.btrfs succeeds
     # but mount -t btrfs falls back to FUSE which chokes on subvol=.

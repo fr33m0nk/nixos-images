@@ -92,7 +92,7 @@
  	},
  };
 +
-+int rk_iommu_reset_paging(struct device *dev)
++int __attribute__((used)) rk_iommu_reset_paging(struct device *dev)
 +{
 +	struct rk_iommu *iommu = rk_iommu_from_dev(dev);
 +	if (!iommu || !iommu->domain)
