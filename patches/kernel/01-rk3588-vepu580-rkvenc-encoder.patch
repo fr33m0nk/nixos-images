@@ -14,6 +14,16 @@
  
  #define DTE_ADDR_DUMMY		0xCAFEBABE
 
+@@ -85,7 +85,8 @@
+ struct rk_iommu_domain {
+ 	struct list_head iommus;
+ 	u32 *dt; /* page directory table */
+ 	dma_addr_t dt_dma;
+ 	spinlock_t iommus_lock; /* lock for iommus list */
+ 	spinlock_t dt_lock; /* lock for modifying page directory table */
++	struct page *prealloc_ptes; /* pre-allocated PTE pages for all DTEs */
+ 	struct device *dma_dev;
+
 @@ -113,6 +113,11 @@
  	int num_irq;
  	struct clk_bulk_data *clocks;
@@ -70,6 +80,33 @@
 +		auto_gate |= DISABLE_FETCH_DTE_TIME_LIMIT;
 +		rk_iommu_write(iommu->bases[i], RK_MMU_AUTO_GATING, auto_gate);
  	}
+@@ -1092,4 +1092,17 @@
+ 	spin_lock_init(&rk_domain->dt_lock);
+ 	INIT_LIST_HEAD(&rk_domain->iommus);
+
++	/* Pre-allocate zeroed PTE pages covering all 1024 DTEs so the
++	 * VDPU381 hardware walker finds every DTE valid.  PTE pages
++	 * are empty (no mappings), walker skims through in ~210ms.
++	 */
++	{
++		struct page *ptes = alloc_pages(GFP_KERNEL | __GFP_ZERO,
++						get_order(SZ_4M));
++		if (ptes) {
++			int i;
++			for (i = 0; i < 1024; i++)
++				rk_domain->dt[i] = rk_ops->mk_dtentries(
++					page_to_phys(ptes) + i * SPAGE_SIZE);
++			rk_domain->prealloc_ptes = ptes;
++		}
++	}
++
+ 	rk_domain->domain.pgsize_bitmap = RK_IOMMU_PGSIZE_BITMAP;
+@@ -1110,4 +1110,12 @@
+ 	int i;
+
++	if (rk_domain->prealloc_ptes)
++		__free_pages(rk_domain->prealloc_ptes, get_order(SZ_4M));
++
 @@ -1182,6 +1183,7 @@
  	.probe_device = rk_iommu_probe_device,
  	.release_device = rk_iommu_release_device,
